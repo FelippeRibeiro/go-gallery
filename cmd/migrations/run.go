@@ -19,6 +19,20 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 `
 
 func main() {
+
+	args := os.Args[1:]
+
+	switch args[0] {
+	case "up":
+		up()
+	case "reset":
+		reset()
+	default:
+		log.Fatalf("Comando inválido: %v", args[0])
+	}
+}
+
+func up() {
 	_, conn, err := db.NewConn()
 	if err != nil {
 		log.Fatalf("Erro ao conectar ao banco de dados: %v", err)
@@ -54,7 +68,7 @@ func main() {
 			log.Fatalf("Erro ao verificar se a migration existe: %v", err)
 		}
 		if rows.Next() {
-			fmt.Println("Migration já executada")
+			fmt.Println("Migration " + arquivo + " já executada")
 			continue
 		}
 
@@ -86,5 +100,48 @@ func main() {
 			log.Fatalf("Erro ao inserir migration no banco de dados: %v", err)
 		}
 		fmt.Println("Migration inserida com sucesso")
+	}
+
+}
+func reset() {
+	_, conn, err := db.NewConn()
+	if err != nil {
+		log.Fatalf("Erro ao conectar ao banco de dados: %v", err)
+	}
+	defer conn.Close()
+
+	rows, err := conn.QueryContext(context.Background(), `
+		SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+	`)
+	if err != nil {
+		log.Fatalf("Erro ao listar tabelas: %v", err)
+	}
+	defer rows.Close()
+
+	var tabelas []string
+	for rows.Next() {
+		var nome string
+		if err := rows.Scan(&nome); err != nil {
+			log.Fatalf("Erro ao ler tabela: %v", err)
+		}
+		tabelas = append(tabelas, nome)
+	}
+	if err := rows.Err(); err != nil {
+		log.Fatalf("Erro ao iterar tabelas: %v", err)
+	}
+
+	if len(tabelas) == 0 {
+		fmt.Println("Nenhuma tabela encontrada")
+		return
+	}
+
+	fmt.Println("Tabelas encontradas:", tabelas)
+
+	for _, tabela := range tabelas {
+		query := fmt.Sprintf(`DROP TABLE IF EXISTS public.%q CASCADE`, tabela)
+		if _, err := conn.ExecContext(context.Background(), query); err != nil {
+			log.Fatalf("Erro ao deletar tabela %s: %v", tabela, err)
+		}
+		fmt.Printf("Tabela %s deletada\n", tabela)
 	}
 }
