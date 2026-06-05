@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  go-gallery-db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: go-gallery
+      POSTGRES_DB: gallery
