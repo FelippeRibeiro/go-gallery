@@ -9,3 +9,18 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: go-gallery
       POSTGRES_DB: gallery
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000" # Porta da API do S3
+      - "9001:9001" # Porta do Console Web
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: xGGXvbprQad++HqXR3pGYhPddsF+pOr0wQep06TghnU=
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+volumes:
+  postgres_data:
+  minio_data: # Novo volume para não perder as fotos ao desligar o Docker
