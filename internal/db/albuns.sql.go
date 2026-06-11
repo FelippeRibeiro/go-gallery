@@ -267,6 +267,21 @@ func (q *Queries) DeletarFotografia(ctx context.Context, id int64) error {
 	return err
 }
 
+const contarPedidosDaFotografia = `SELECT COUNT(*) FROM pedidos_fotos WHERE id_fotografia = $1`
+
+func (q *Queries) ContarPedidosDaFotografia(ctx context.Context, id int64) (int64, error) {
+	var n int64
+	err := q.db.QueryRowContext(ctx, contarPedidosDaFotografia, id).Scan(&n)
+	return n, err
+}
+
+const desativarFotografia = `UPDATE fotografias SET ativo = FALSE WHERE id = $1`
+
+func (q *Queries) DesativarFotografia(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, desativarFotografia, id)
+	return err
+}
+
 // ─── Clientes ────────────────────────────────────────────────────────────────
 
 const associarClienteAlbum = `

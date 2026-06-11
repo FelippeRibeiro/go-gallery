@@ -92,6 +92,12 @@ export interface Pedido {
   CriadoEm: string
 }
 
+export interface PedidoResumo extends Pedido {
+  AlbumTitulo: string
+  CapaUrl: { String: string; Valid: boolean }
+  TotalFotos: number
+}
+
 export interface PedidoFotoInfo {
   ID: number
   IDPedido: number

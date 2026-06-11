@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -79,6 +80,43 @@ func (q *Queries) ListarFotosPedido(ctx context.Context, idPedido int64) ([]Pedi
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+// PedidoResumo é o pedido enriquecido com dados do álbum e contagem de fotos,
+// usado na listagem "Meus Pedidos".
+type PedidoResumo struct {
+	Pedido
+	AlbumTitulo string
+	CapaUrl     sql.NullString
+	TotalFotos  int64
+}
+
+const listarPedidosResumoPorCliente = `
+SELECT p.id, p.id_cliente, p.id_album, p.status, p.valor_total, p.criado_em,
+       a.titulo, a.capa_url,
+       (SELECT COUNT(*) FROM pedidos_fotos pf WHERE pf.id_pedido = p.id) AS total_fotos
+FROM pedidos p
+INNER JOIN albuns a ON a.id = p.id_album
+WHERE p.id_cliente = $1
+ORDER BY p.criado_em DESC
+`
+
+func (q *Queries) ListarPedidosResumoPorCliente(ctx context.Context, idCliente int64) ([]PedidoResumo, error) {
+	rows, err := q.db.QueryContext(ctx, listarPedidosResumoPorCliente, idCliente)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PedidoResumo
+	for rows.Next() {
+		var p PedidoResumo
+		if err := rows.Scan(&p.ID, &p.IDCliente, &p.IDAlbum, &p.Status, &p.ValorTotal, &p.CriadoEm,
+			&p.AlbumTitulo, &p.CapaUrl, &p.TotalFotos); err != nil {
+			return nil, err
+		}
+		items = append(items, p)
 	}
 	return items, rows.Err()
 }

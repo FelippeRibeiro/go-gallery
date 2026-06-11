@@ -337,9 +337,14 @@ function PhotographerAlbumView({ album: initialAlbum, fotos: initialFotos }: { a
   }
 
   const handleDeletePhoto = async (foto: Foto) => {
-    await deletePhoto(albumId, foto.ID)
-    setFotos((prev) => prev.filter((f) => f.ID !== foto.ID))
-    toast.success('Foto removida')
+    try {
+      await deletePhoto(albumId, foto.ID)
+      setFotos((prev) => prev.filter((f) => f.ID !== foto.ID))
+      toast.success('Foto removida')
+    } catch (e) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erro ao remover foto'
+      toast.error(msg)
+    }
   }
 
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {

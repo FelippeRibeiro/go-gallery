@@ -1,5 +1,8 @@
 import api from './client'
-import type { Pedido, PedidoFotoInfo, DownloadLink, Album } from '../types'
+import type { Pedido, PedidoResumo, PedidoFotoInfo, DownloadLink, Album } from '../types'
+
+export const listMyOrders = () =>
+  api.get<{ pedidos: PedidoResumo[] }>('/orders').then((r) => r.data.pedidos)
 
 export const createOrder = (albumId: number, fotoIds: number[]) =>
   api.post<{ pedido_id: number; valor_total: string; fotos: number }>(

@@ -69,11 +69,11 @@ func (q *Queries) RemoverFotografoAlbum(ctx context.Context, id, idAlbum int64) 
 }
 
 const listarAlbunsColaborador = `
-SELECT ` + albumCols + `
-FROM albuns
-INNER JOIN fotografos_albuns fa ON fa.id_album = albuns.id
-WHERE fa.id_fotografo = $1 AND albuns.ativo = TRUE
-ORDER BY albuns.criado_em DESC
+SELECT a.id, a.titulo, a.descricao, a.data_evento, a.criado_em, a.ativo, a.id_fotografo, a.lote, a.valor_album, a.valor_unitario_fotografia, a.publico, a.capa_url
+FROM albuns a
+INNER JOIN fotografos_albuns fa ON fa.id_album = a.id
+WHERE fa.id_fotografo = $1 AND a.ativo = TRUE
+ORDER BY a.criado_em DESC
 `
 
 func (q *Queries) ListarAlbunsColaborador(ctx context.Context, idFotografo int64) ([]Albun, error) {

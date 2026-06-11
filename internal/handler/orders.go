@@ -121,6 +121,29 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GET /api/orders — lista todos os pedidos do usuário autenticado
+func ListMyOrders(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDKey).(int64)
+
+	queries := db.GetQueries()
+	pedidos, err := queries.ListarPedidosResumoPorCliente(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao listar pedidos")
+		return
+	}
+
+	for i := range pedidos {
+		if pedidos[i].CapaUrl.Valid {
+			pedidos[i].CapaUrl.String = s3client.PublicURL(pedidos[i].CapaUrl.String)
+		}
+	}
+	if pedidos == nil {
+		pedidos = []db.PedidoResumo{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"pedidos": pedidos})
+}
+
 // GET /api/orders/{id} — cliente vê pedido
 func GetOrder(w http.ResponseWriter, r *http.Request) {
 	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

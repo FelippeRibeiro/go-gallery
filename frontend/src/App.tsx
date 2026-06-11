@@ -9,6 +9,7 @@ import AlbumDetail from '@/pages/AlbumDetail'
 import AcceptInvite from '@/pages/AcceptInvite'
 import PublicGallery from '@/pages/PublicGallery'
 import Order from '@/pages/Order'
+import Orders from '@/pages/Orders'
 import PublicPhotographer from '@/pages/PublicPhotographer'
 import Discover from '@/pages/Discover'
 import Profile from '@/pages/Profile'
@@ -42,6 +43,10 @@ export default function App() {
           <Route
             path="/albums/new"
             element={<PrivateRoute><AlbumCreate /></PrivateRoute>}
+          />
+          <Route
+            path="/orders"
+            element={<PrivateRoute><Orders /></PrivateRoute>}
           />
           <Route
             path="/orders/:id"

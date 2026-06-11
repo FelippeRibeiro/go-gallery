@@ -81,6 +81,7 @@ func New() http.Handler {
 
 	// Pedidos
 	mux.HandleFunc("POST /api/albums/{id}/orders", middleware.RequireAuth(handler.CreateOrder))
+	mux.HandleFunc("GET /api/orders", middleware.RequireAuth(handler.ListMyOrders))
 	mux.HandleFunc("GET /api/orders/{id}", middleware.RequireAuth(handler.GetOrder))
 	mux.HandleFunc("GET /api/orders/{id}/downloads", middleware.RequireAuth(handler.GetDownloadLinks))
 

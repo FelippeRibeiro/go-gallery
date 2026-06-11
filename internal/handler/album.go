@@ -556,7 +556,8 @@ func DeletePhoto(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "álbum não encontrado")
 		return
 	}
-	if album.IDFotografo != userID {
+	isOwner := album.IDFotografo == userID
+	if !isOwner {
 		isCollab, _ := queries.VerificarFotografoAlbum(r.Context(), userID, albumID)
 		if !isCollab {
 			writeError(w, http.StatusForbidden, "acesso negado")
@@ -573,15 +574,40 @@ func DeletePhoto(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "esta foto não pertence ao álbum informado")
 		return
 	}
+	// Dono do álbum pode remover qualquer foto; colaborador só as que ele enviou.
+	if !isOwner && foto.IDFotografo != userID {
+		writeError(w, http.StatusForbidden, "acesso negado: esta foto pertence a outro fotógrafo")
+		return
+	}
 
 	ctx := r.Context()
-	_ = s3client.DeleteObject(ctx, s3client.KeyFromURL(foto.UrlAlta))
-	_ = s3client.DeleteObject(ctx, s3client.KeyFromURL(foto.UrlBaixa))
 
+	// Se a foto já faz parte de algum pedido, não pode ser apagada de vez
+	// (quebraria o histórico do pedido e os downloads de quem comprou).
+	// Nesse caso fazemos soft delete (ativo = false) e mantemos os arquivos no S3.
+	emPedido, err := queries.ContarPedidosDaFotografia(ctx, photoID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao verificar pedidos da foto")
+		return
+	}
+
+	if emPedido > 0 {
+		if err := queries.DesativarFotografia(ctx, photoID); err != nil {
+			writeError(w, http.StatusInternalServerError, "erro ao remover foto do banco")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Sem pedidos: remove definitivamente do banco e os objetos do S3.
 	if err := queries.DeletarFotografia(ctx, photoID); err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao remover foto do banco")
 		return
 	}
+	_ = s3client.DeleteObject(ctx, s3client.KeyFromURL(foto.UrlAlta))
+	_ = s3client.DeleteObject(ctx, s3client.KeyFromURL(foto.UrlBaixa))
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

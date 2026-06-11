@@ -60,7 +60,7 @@ export default function Order() {
       <Layout>
         <div className="flex flex-col items-center justify-center h-64 gap-4">
           <p className="text-muted-foreground">Pedido não encontrado.</p>
-          <Button asChild variant="outline"><Link to="/dashboard">Voltar</Link></Button>
+          <Button asChild variant="outline"><Link to="/orders">Voltar</Link></Button>
         </div>
       </Layout>
     )
@@ -71,7 +71,7 @@ export default function Order() {
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
-            <Link to="/dashboard"><ArrowLeft className="h-4 w-4" /></Link>
+            <Link to="/orders"><ArrowLeft className="h-4 w-4" /></Link>
           </Button>
           <div>
             <h1 className="text-2xl font-bold">Pedido #{pedido.ID}</h1>
