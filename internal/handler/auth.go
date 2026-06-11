@@ -168,7 +168,7 @@ func AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		// User already exists — just associate with album
 		user = existingUser
 	} else if errors.Is(err, sql.ErrNoRows) {
-		user, err = queries.CriarCliente(r.Context(), db.CriarFotografoParams{
+		user, err = queries.CriarCliente(r.Context(), db.CriarClienteParams{
 			Nome:      req.Nome,
 			Email:     convite.Email,
 			SenhaHash: sql.NullString{String: string(hash), Valid: true},

@@ -275,7 +275,7 @@ func InviteClient(w http.ResponseWriter, r *http.Request) {
 
 	capaURL := ""
 	if album.CapaUrl.Valid {
-		capaURL = album.CapaUrl.String
+		capaURL = s3client.PublicURL(album.CapaUrl.String)
 	}
 	go func() {
 		if err := email.EnviarConviteAlbum(req.Email, album.Titulo, token, capaURL); err != nil {
@@ -699,7 +699,7 @@ func ResendInvite(w http.ResponseWriter, r *http.Request) {
 
 	capaURL := ""
 	if album.CapaUrl.Valid {
-		capaURL = album.CapaUrl.String
+		capaURL = s3client.PublicURL(album.CapaUrl.String)
 	}
 	go func() {
 		if err := email.EnviarConviteAlbum(convite.Email, album.Titulo, convite.Token, capaURL); err != nil {

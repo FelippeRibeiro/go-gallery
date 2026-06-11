@@ -7,3 +7,12 @@ sql:
       go:
         package: 'db'
         out: 'internal/db'
+        overrides:
+          - db_type: "pg_catalog.numeric"
+            go_type: "string"
+          - db_type: "numeric"
+            go_type: "string"
+          - db_type: "pg_catalog.int4"
+            go_type: "int64"
+          - db_type: "usuario_tipo"
+            go_type: "string"
