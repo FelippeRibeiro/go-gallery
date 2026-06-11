@@ -3,28 +3,53 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-var conn *sql.DB
-var queries *Queries
+var (
+	globalQueries *Queries
+	globalDB      *sql.DB
+)
 
-func NewConn() (*Queries, *sql.DB, error) {
-
-	//TODO: pegar o dbURL do arquivo de configuração
-	dbURL := "postgres://postgres:go-gallery@localhost:5432/gallery?sslmode=disable"
+func Init() error {
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:go-gallery@localhost:5432/gallery?sslmode=disable"
+	}
 	var err error
-	conn, err = sql.Open("pgx", dbURL)
+	globalDB, err = sql.Open("pgx", dbURL)
+	if err != nil {
+		return fmt.Errorf("erro ao conectar ao banco: %w", err)
+	}
+	if err = globalDB.Ping(); err != nil {
+		return fmt.Errorf("erro ao pingar o banco: %w", err)
+	}
+	globalQueries = New(globalDB)
+	return nil
+}
+
+func GetQueries() *Queries {
+	return globalQueries
+}
+
+func GetDB() *sql.DB {
+	return globalDB
+}
+
+// NewConn is kept for the migration runner.
+func NewConn() (*Queries, *sql.DB, error) {
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:go-gallery@localhost:5432/gallery?sslmode=disable"
+	}
+	conn, err := sql.Open("pgx", dbURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("erro ao conectar ao banco de dados: %w", err)
 	}
-	err = conn.Ping()
-	if err != nil {
+	if err = conn.Ping(); err != nil {
 		return nil, nil, fmt.Errorf("erro ao pingar o banco de dados: %w", err)
 	}
-	db := New(conn)
-	queries = db
-
-	return db, conn, nil
+	return New(conn), conn, nil
 }

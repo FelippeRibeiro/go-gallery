@@ -17,6 +17,7 @@ services:
     environment:
       MINIO_ROOT_USER: admin
       MINIO_ROOT_PASSWORD: xGGXvbprQad++HqXR3pGYhPddsF+pOr0wQep06TghnU=
+
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
