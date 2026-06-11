@@ -59,7 +59,7 @@ func (q *Queries) ListarFotosPedido(ctx context.Context, idPedido int64) ([]List
 }
 
 const listarPedidosPorCliente = `-- name: ListarPedidosPorCliente :many
-SELECT id, id_cliente, id_album, status, valor_total, criado_em FROM pedidos
+SELECT id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id FROM pedidos
 WHERE id_cliente = $1
 ORDER BY criado_em DESC
 `
@@ -80,6 +80,8 @@ func (q *Queries) ListarPedidosPorCliente(ctx context.Context, idCliente int64) 
 			&i.Status,
 			&i.ValorTotal,
 			&i.CriadoEm,
+			&i.MpPreferenceID,
+			&i.MpPaymentID,
 		); err != nil {
 			return nil, err
 		}
@@ -150,7 +152,7 @@ func (q *Queries) ListarPedidosResumoPorCliente(ctx context.Context, idCliente i
 }
 
 const obterPedidoPorID = `-- name: ObterPedidoPorID :one
-SELECT id, id_cliente, id_album, status, valor_total, criado_em FROM pedidos WHERE id = $1
+SELECT id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id FROM pedidos WHERE id = $1
 `
 
 func (q *Queries) ObterPedidoPorID(ctx context.Context, id int64) (Pedido, error) {
@@ -163,14 +165,30 @@ func (q *Queries) ObterPedidoPorID(ctx context.Context, id int64) (Pedido, error
 		&i.Status,
 		&i.ValorTotal,
 		&i.CriadoEm,
+		&i.MpPreferenceID,
+		&i.MpPaymentID,
 	)
 	return i, err
+}
+
+const atualizarPreferenciaPedido = `-- name: atualizarPreferenciaPedido :exec
+UPDATE pedidos SET mp_preference_id = $2 WHERE id = $1
+`
+
+type atualizarPreferenciaPedidoParams struct {
+	ID             int64
+	MpPreferenceID sql.NullString
+}
+
+func (q *Queries) atualizarPreferenciaPedido(ctx context.Context, arg atualizarPreferenciaPedidoParams) error {
+	_, err := q.db.ExecContext(ctx, atualizarPreferenciaPedido, arg.ID, arg.MpPreferenceID)
+	return err
 }
 
 const criarPedido = `-- name: criarPedido :one
 INSERT INTO pedidos (id_cliente, id_album, status, valor_total)
 VALUES ($1, $2, 'pendente', $3)
-RETURNING id, id_cliente, id_album, status, valor_total, criado_em
+RETURNING id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id
 `
 
 type criarPedidoParams struct {
@@ -189,6 +207,8 @@ func (q *Queries) criarPedido(ctx context.Context, arg criarPedidoParams) (Pedid
 		&i.Status,
 		&i.ValorTotal,
 		&i.CriadoEm,
+		&i.MpPreferenceID,
+		&i.MpPaymentID,
 	)
 	return i, err
 }
@@ -207,5 +227,55 @@ type criarPedidoFotoParams struct {
 
 func (q *Queries) criarPedidoFoto(ctx context.Context, arg criarPedidoFotoParams) error {
 	_, err := q.db.ExecContext(ctx, criarPedidoFoto, arg.IDPedido, arg.IDFotografia, arg.ValorUnitario)
+	return err
+}
+
+const listarFotoIDsCompradas = `-- name: listarFotoIDsCompradas :many
+SELECT pf.id_fotografia
+FROM pedidos_fotos pf
+INNER JOIN pedidos p ON p.id = pf.id_pedido
+WHERE p.id_cliente = $1 AND p.id_album = $2 AND p.status = 'pago'
+`
+
+type listarFotoIDsCompradasParams struct {
+	IDCliente int64
+	IDAlbum   int64
+}
+
+func (q *Queries) listarFotoIDsCompradas(ctx context.Context, arg listarFotoIDsCompradasParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listarFotoIDsCompradas, arg.IDCliente, arg.IDAlbum)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id_fotografia int64
+		if err := rows.Scan(&id_fotografia); err != nil {
+			return nil, err
+		}
+		items = append(items, id_fotografia)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const registrarPagamentoPedido = `-- name: registrarPagamentoPedido :exec
+UPDATE pedidos SET status = $2, mp_payment_id = $3 WHERE id = $1
+`
+
+type registrarPagamentoPedidoParams struct {
+	ID          int64
+	Status      string
+	MpPaymentID sql.NullString
+}
+
+func (q *Queries) registrarPagamentoPedido(ctx context.Context, arg registrarPagamentoPedidoParams) error {
+	_, err := q.db.ExecContext(ctx, registrarPagamentoPedido, arg.ID, arg.Status, arg.MpPaymentID)
 	return err
 }

@@ -17,7 +17,7 @@ export const createAlbum = (data: {
 export type PapelAlbum = 'dono' | 'colaborador' | 'cliente' | 'visitante'
 
 export const getAlbum = (id: number) =>
-  api.get<AlbumComFotos & { papel?: PapelAlbum }>(`/albums/${id}`).then((r) => r.data)
+  api.get<AlbumComFotos & { papel?: PapelAlbum; compradas?: number[] }>(`/albums/${id}`).then((r) => r.data)
 
 export const updateVisibility = (albumId: number, publico: boolean) =>
   api.patch<Album>(`/albums/${albumId}/visibility`, { publico }).then((r) => r.data)

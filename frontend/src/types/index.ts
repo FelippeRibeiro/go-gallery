@@ -79,7 +79,7 @@ export interface AlbumComFotos {
 }
 
 export interface AuthResponse {
-  token: string
+  // O JWT vai num cookie httpOnly — não é exposto ao JS.
   user: User
 }
 

@@ -62,12 +62,14 @@ type FotografosAlbun struct {
 }
 
 type Pedido struct {
-	ID         int64
-	IDCliente  int64
-	IDAlbum    int64
-	Status     string
-	ValorTotal string
-	CriadoEm   time.Time
+	ID             int64
+	IDCliente      int64
+	IDAlbum        int64
+	Status         string
+	ValorTotal     string
+	CriadoEm       time.Time
+	MpPreferenceID sql.NullString
+	MpPaymentID    sql.NullString
 }
 
 type PedidosFoto struct {

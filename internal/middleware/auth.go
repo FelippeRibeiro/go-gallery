@@ -18,6 +18,57 @@ const (
 	UserTipoKey contextKey = "userTipo"
 )
 
+// TokenCookieName é o nome do cookie httpOnly que guarda o JWT.
+const TokenCookieName = "token"
+
+const tokenTTL = 24 * time.Hour
+
+// cookieSecure indica se o cookie deve ter o atributo Secure (HTTPS).
+// Controlado por COOKIE_SECURE=true em produção.
+func cookieSecure() bool {
+	v := strings.ToLower(os.Getenv("COOKIE_SECURE"))
+	return v == "true" || v == "1"
+}
+
+// SetTokenCookie grava o JWT num cookie httpOnly. O token nunca é exposto ao JS.
+func SetTokenCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     TokenCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   cookieSecure(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(tokenTTL.Seconds()),
+	})
+}
+
+// ClearTokenCookie remove o cookie de autenticação (logout).
+func ClearTokenCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     TokenCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   cookieSecure(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
+// tokenFromRequest extrai o JWT do cookie httpOnly ou, como fallback, do header
+// Authorization: Bearer (útil para clientes de API/testes).
+func tokenFromRequest(r *http.Request) string {
+	if c, err := r.Cookie(TokenCookieName); err == nil && c.Value != "" {
+		return c.Value
+	}
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		return strings.TrimPrefix(authHeader, "Bearer ")
+	}
+	return ""
+}
+
 type Claims struct {
 	UserID int64  `json:"user_id"`
 	Tipo   string `json:"tipo"`
@@ -37,7 +88,7 @@ func GenerateToken(userID int64, tipo string) (string, error) {
 		UserID: userID,
 		Tipo:   tipo,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(tokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -63,12 +114,12 @@ func ParseToken(tokenStr string) (*Claims, error) {
 
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") {
+		tokenStr := tokenFromRequest(r)
+		if tokenStr == "" {
 			http.Error(w, `{"error":"não autorizado"}`, http.StatusUnauthorized)
 			return
 		}
-		claims, err := ParseToken(strings.TrimPrefix(authHeader, "Bearer "))
+		claims, err := ParseToken(tokenStr)
 		if err != nil {
 			http.Error(w, `{"error":"token inválido"}`, http.StatusUnauthorized)
 			return

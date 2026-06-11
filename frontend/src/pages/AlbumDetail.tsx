@@ -59,12 +59,17 @@ function AlbumDetailSkeleton() {
 
 // ─── Client view ──────────────────────────────────────────────────────────────
 
-function ClientAlbumView({ album, fotos, authenticated }: { album: Album; fotos: FotoPublica[]; authenticated: boolean }) {
+function ClientAlbumView({ album, fotos: allFotos, compradas, authenticated }: { album: Album; fotos: FotoPublica[]; compradas: number[]; authenticated: boolean }) {
   const navigate = useNavigate()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [ordering, setOrdering] = useState(false)
+
+  // Fotos já compradas continuam visíveis na lista, mas não podem ser
+  // selecionadas novamente para uma nova compra.
+  const compradasSet = new Set(compradas)
+  const fotos = allFotos
   const lightboxPhotos = fotos.map(f => ({ id: f.id, url: f.url_baixa }))
 
   const toggle = (id: number) =>
@@ -74,6 +79,18 @@ function ClientAlbumView({ album, fotos, authenticated }: { album: Album; fotos:
       else next.add(id)
       return next
     })
+
+  const handlePhotoClick = (foto: FotoPublica, index: number) => {
+    if (!selectMode) {
+      setLightboxIndex(index)
+      return
+    }
+    if (compradasSet.has(foto.id)) {
+      toast.info('Esta foto já foi comprada')
+      return
+    }
+    toggle(foto.id)
+  }
 
   const unitPrice = Number(album.ValorUnitarioFotografia) || 0
   const total = album.Lote
@@ -89,7 +106,8 @@ function ClientAlbumView({ album, fotos, authenticated }: { album: Album; fotos:
     try {
       const fotoIds = album.Lote ? [] : Array.from(selected)
       const result = await createOrder(album.ID, fotoIds)
-      toast.success('Pedido criado com sucesso!')
+      toast.success('Pedido criado! Escolha a forma de pagamento.')
+      // A escolha do método (PIX ou cartão) acontece na tela do pedido.
       navigate(`/orders/${result.pedido_id}`)
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erro ao criar pedido'
@@ -191,20 +209,30 @@ function ClientAlbumView({ album, fotos, authenticated }: { album: Album; fotos:
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-          {fotos.map((foto, i) => (
+          {fotos.map((foto, i) => {
+            const comprada = compradasSet.has(foto.id)
+            return (
             <div
               key={foto.id}
-              onClick={() => selectMode ? toggle(foto.id) : setLightboxIndex(i)}
-              className={`relative aspect-square rounded-lg overflow-hidden bg-muted group ${selectMode ? 'cursor-pointer' : 'cursor-zoom-in'}`}
+              onClick={() => handlePhotoClick(foto, i)}
+              className={`relative aspect-square rounded-lg overflow-hidden bg-muted group ${
+                selectMode ? (comprada ? 'cursor-not-allowed' : 'cursor-pointer') : 'cursor-zoom-in'
+              }`}
             >
               <img
                 src={foto.url_baixa}
                 alt={`Foto ${foto.id}`}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                className={`w-full h-full object-cover transition-transform duration-300 ${comprada ? 'opacity-60' : 'group-hover:scale-105'}`}
                 loading="lazy"
               />
-              {/* Selection overlay */}
-              {selectMode && (
+              {/* Marca de foto já comprada */}
+              {comprada && (
+                <div className="absolute top-2 left-2 rounded-full bg-emerald-600/90 px-2 py-0.5 text-[10px] font-semibold text-white">
+                  Comprada
+                </div>
+              )}
+              {/* Selection overlay (não disponível para fotos já compradas) */}
+              {selectMode && !comprada && (
                 <div className={`absolute inset-0 transition-colors ${selected.has(foto.id) ? 'bg-primary/40' : 'bg-transparent group-hover:bg-white/10'}`}>
                   {selected.has(foto.id) && (
                     <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-primary flex items-center justify-center">
@@ -216,7 +244,8 @@ function ClientAlbumView({ album, fotos, authenticated }: { album: Album; fotos:
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -552,6 +581,7 @@ export default function AlbumDetail() {
 
   const [album, setAlbum] = useState<Album | null>(null)
   const [fotos, setFotos] = useState<Foto[] | FotoPublica[]>([])
+  const [compradas, setCompradas] = useState<number[]>([])
   const [mode, setMode] = useState<ViewMode>('view')
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -571,6 +601,7 @@ export default function AlbumDetail() {
           if (cancelled) return
           setAlbum(res.album)
           setFotos(res.fotos)
+          setCompradas(res.compradas ?? [])
           setMode(res.papel === 'dono' || res.papel === 'colaborador' ? 'manage' : 'view')
           setLoading(false)
           return
@@ -614,7 +645,7 @@ export default function AlbumDetail() {
       {mode === 'manage' ? (
         <PhotographerAlbumView album={album} fotos={fotos as Foto[]} />
       ) : (
-        <ClientAlbumView album={album} fotos={fotos as FotoPublica[]} authenticated={isAuthenticated} />
+        <ClientAlbumView album={album} fotos={fotos as FotoPublica[]} compradas={compradas} authenticated={isAuthenticated} />
       )}
     </PublicOrAppLayout>
   )

@@ -15,13 +15,14 @@ func ServeAlbumWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// WebSocket auth via query param (browsers can't send custom headers)
-	tokenStr := r.URL.Query().Get("token")
-	if tokenStr == "" {
-		http.Error(w, "token ausente", http.StatusUnauthorized)
+	// Auth via cookie httpOnly — o navegador envia o cookie no handshake do WS
+	// (mesma origem), então não é preciso passar o token na query string.
+	c, err := r.Cookie(middleware.TokenCookieName)
+	if err != nil || c.Value == "" {
+		http.Error(w, "não autenticado", http.StatusUnauthorized)
 		return
 	}
-	if _, err := middleware.ParseToken(tokenStr); err != nil {
+	if _, err := middleware.ParseToken(c.Value); err != nil {
 		http.Error(w, "token inválido", http.StatusUnauthorized)
 		return
 	}

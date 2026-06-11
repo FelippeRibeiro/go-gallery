@@ -11,11 +11,12 @@ export function useAlbumSocket(albumId: number, onNewPhoto: (foto: FotoPublica) 
   onNewPhotoRef.current = onNewPhoto
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) return
+    // Só conecta se houver sessão; o cookie httpOnly é enviado automaticamente
+    // no handshake do WebSocket (mesma origem), sem token na URL.
+    if (!sessionStorage.getItem('user')) return
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${protocol}//${location.host}/ws/albums/${albumId}?token=${token}`
+    const url = `${protocol}//${location.host}/ws/albums/${albumId}`
 
     let ws: WebSocket | null = new WebSocket(url)
     let dead = false

@@ -78,9 +78,9 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	middleware.SetTokenCookie(w, token)
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"token": token,
-		"user":  toUserDTO(user),
+		"user": toUserDTO(user),
 	})
 }
 
@@ -118,9 +118,9 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	middleware.SetTokenCookie(w, token)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"token": token,
-		"user":  toUserDTO(user),
+		"user": toUserDTO(user),
 	})
 }
 
@@ -191,9 +191,27 @@ func AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	middleware.SetTokenCookie(w, token)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"token":    token,
 		"user":     toUserDTO(user),
 		"album_id": convite.IDAlbum,
 	})
+}
+
+// GET /api/me — retorna o usuário autenticado (decodificado do cookie JWT).
+// Fonte da verdade do frontend para restaurar a sessão.
+func Me(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(middleware.UserIDKey).(int64)
+	user, err := db.GetQueries().ObterUsuarioPorID(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "usuário não encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": toUserDTO(user)})
+}
+
+// POST /api/auth/logout — limpa o cookie de autenticação.
+func Logout(w http.ResponseWriter, r *http.Request) {
+	middleware.ClearTokenCookie(w)
+	w.WriteHeader(http.StatusNoContent)
 }

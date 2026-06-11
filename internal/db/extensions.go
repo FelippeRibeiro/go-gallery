@@ -140,6 +140,32 @@ func (q *Queries) CriarPedidoFoto(ctx context.Context, idPedido, idFotografia in
 	})
 }
 
+// ListarFotoIDsCompradas retorna os IDs das fotos que o cliente já comprou
+// (pedido com status 'pago') em um álbum.
+func (q *Queries) ListarFotoIDsCompradas(ctx context.Context, idCliente, idAlbum int64) ([]int64, error) {
+	return q.listarFotoIDsCompradas(ctx, listarFotoIDsCompradasParams{
+		IDCliente: idCliente,
+		IDAlbum:   idAlbum,
+	})
+}
+
+// AtualizarPreferenciaPedido grava o ID da preference do Mercado Pago no pedido.
+func (q *Queries) AtualizarPreferenciaPedido(ctx context.Context, id int64, preferenceID string) error {
+	return q.atualizarPreferenciaPedido(ctx, atualizarPreferenciaPedidoParams{
+		ID:             id,
+		MpPreferenceID: sql.NullString{String: preferenceID, Valid: preferenceID != ""},
+	})
+}
+
+// RegistrarPagamentoPedido atualiza o status do pedido e grava o ID do pagamento do MP.
+func (q *Queries) RegistrarPagamentoPedido(ctx context.Context, id int64, status, paymentID string) error {
+	return q.registrarPagamentoPedido(ctx, registrarPagamentoPedidoParams{
+		ID:          id,
+		Status:      status,
+		MpPaymentID: sql.NullString{String: paymentID, Valid: paymentID != ""},
+	})
+}
+
 // AtualizarBioFotografo salva o texto de bio; bio é TEXT NULL no banco.
 func (q *Queries) AtualizarBioFotografo(ctx context.Context, id int64, bio string) error {
 	return q.atualizarBioFotografo(ctx, atualizarBioFotografoParams{

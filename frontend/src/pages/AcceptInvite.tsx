@@ -39,7 +39,7 @@ export default function AcceptInvite() {
     setLoading(true)
     try {
       const res = await acceptInvite(token, nome, senha)
-      loginWith(res.token, res.user)
+      loginWith(res.user)
       toast.success('Bem-vindo ao Go Gallery!')
       navigate(`/albums/${res.album_id}`)
     } catch (err: unknown) {

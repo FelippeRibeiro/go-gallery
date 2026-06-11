@@ -36,6 +36,10 @@ func New() http.Handler {
 	mux.HandleFunc("POST /api/auth/register", handler.Register)
 	mux.HandleFunc("POST /api/auth/login", handler.Login)
 	mux.HandleFunc("POST /api/auth/accept-invite", handler.AcceptInvite)
+	mux.HandleFunc("POST /api/auth/logout", handler.Logout)
+
+	// Usuário autenticado (decodificado do cookie JWT)
+	mux.HandleFunc("GET /api/me", middleware.RequireAuth(handler.Me))
 
 	// Álbuns públicos — sem autenticação
 	mux.HandleFunc("GET /api/public/albums", handler.ListPublicAlbums)
@@ -83,7 +87,12 @@ func New() http.Handler {
 	mux.HandleFunc("POST /api/albums/{id}/orders", middleware.RequireAuth(handler.CreateOrder))
 	mux.HandleFunc("GET /api/orders", middleware.RequireAuth(handler.ListMyOrders))
 	mux.HandleFunc("GET /api/orders/{id}", middleware.RequireAuth(handler.GetOrder))
+	mux.HandleFunc("POST /api/orders/{id}/checkout", middleware.RequireAuth(handler.CreateCheckout))
+	mux.HandleFunc("POST /api/orders/{id}/pix", middleware.RequireAuth(handler.CreatePix))
 	mux.HandleFunc("GET /api/orders/{id}/downloads", middleware.RequireAuth(handler.GetDownloadLinks))
+
+	// Webhook do Mercado Pago — público (sem autenticação)
+	mux.HandleFunc("POST /api/webhooks/mercadopago", handler.MercadoPagoWebhook)
 
 	// WebSocket
 	mux.HandleFunc("GET /ws/albums/{id}", handler.ServeAlbumWS)

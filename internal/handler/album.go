@@ -173,7 +173,17 @@ func GetAlbum(w http.ResponseWriter, r *http.Request) {
 	for i, f := range fotos {
 		fotosPublicas[i] = fotoPublicaDTO{ID: f.ID, UrlBaixa: s3client.PublicURL(f.UrlBaixa), CriadoEm: f.CriadoEm}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"album": comURLAlbum(album), "fotos": fotosPublicas, "papel": papel})
+
+	// Fotos que o cliente já comprou (pedido pago) — o frontend as remove da
+	// seleção para impedir compra duplicada.
+	compradas := []int64{}
+	if papel == "cliente" {
+		if ids, err := queries.ListarFotoIDsCompradas(r.Context(), userID, albumID); err == nil {
+			compradas = ids
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"album": comURLAlbum(album), "fotos": fotosPublicas, "papel": papel, "compradas": compradas})
 }
 
 // PATCH /api/albums/{id}/visibility  — somente dono

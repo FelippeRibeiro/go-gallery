@@ -8,13 +8,32 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/FelippeRibeiro/go-gallery/internal/db"
 	"github.com/FelippeRibeiro/go-gallery/internal/email"
 	"github.com/FelippeRibeiro/go-gallery/internal/middleware"
+	"github.com/FelippeRibeiro/go-gallery/internal/payment"
 	s3client "github.com/FelippeRibeiro/go-gallery/internal/s3"
 )
+
+// appBaseURL devolve a URL pública do frontend (APP_URL), usada nas back_urls.
+func appBaseURL() string {
+	if u := os.Getenv("APP_URL"); u != "" {
+		return u
+	}
+	return "http://localhost:5173"
+}
+
+// apiBaseURL devolve a URL pública do backend (API_URL), usada na notification_url
+// do webhook do Mercado Pago. Em produção deve ser um domínio acessível externamente.
+func apiBaseURL() string {
+	if u := os.Getenv("API_URL"); u != "" {
+		return u
+	}
+	return "http://localhost:8080"
+}
 
 // POST /api/albums/{id}/orders — cliente cria pedido
 func CreateOrder(w http.ResponseWriter, r *http.Request) {
@@ -74,14 +93,41 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calculate total
-	valorTotal := album.ValorAlbum
-	if !album.Lote {
-		total := float64(len(fotosParaPedido)) * func() float64 {
-			v, _ := strconv.ParseFloat(album.ValorUnitarioFotografia, 64)
-			return v
-		}()
-		valorTotal = fmt.Sprintf("%.2f", total)
+	// Validação anti-duplicidade: remove fotos que o cliente já comprou
+	// (pedido com status 'pago') neste álbum. Rede de segurança — o frontend
+	// já oculta essas fotos, mas o pedido também é validado aqui.
+	compradas, _ := queries.ListarFotoIDsCompradas(r.Context(), userID, albumID)
+	if len(compradas) > 0 {
+		jaComprada := make(map[int64]bool, len(compradas))
+		for _, id := range compradas {
+			jaComprada[id] = true
+		}
+		filtradas := fotosParaPedido[:0]
+		for _, f := range fotosParaPedido {
+			if !jaComprada[f.ID] {
+				filtradas = append(filtradas, f)
+			}
+		}
+		fotosParaPedido = filtradas
+		if len(fotosParaPedido) == 0 {
+			writeError(w, http.StatusConflict, "você já comprou essas fotos")
+			return
+		}
+	}
+
+	// Total calculado a partir da MESMA fonte usada nos itens (valor_unitario de
+	// cada foto), garantindo que a soma dos itens bata com o total cobrado.
+	// Para lote, o total é o preço fechado do álbum e os itens valem 0.00.
+	var valorTotal string
+	if album.Lote {
+		valorTotal = album.ValorAlbum
+	} else {
+		var soma float64
+		for _, f := range fotosParaPedido {
+			v, _ := strconv.ParseFloat(f.ValorUnitario, 64)
+			soma += v
+		}
+		valorTotal = fmt.Sprintf("%.2f", soma)
 	}
 
 	pedido, err := queries.CriarPedido(r.Context(), userID, albumID, valorTotal)
@@ -98,26 +144,137 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		_ = queries.CriarPedidoFoto(r.Context(), pedido.ID, f.ID, v)
 	}
 
-	// Send confirmation email async
+	// Email de pedido criado (aguardando pagamento) — async.
 	usuario, _ := queries.ObterUsuarioPorID(r.Context(), userID)
-	appURL := func() string {
-		u := os.Getenv("APP_URL")
-		if u == "" {
-			return "http://localhost:5173"
-		}
-		return u
-	}()
-	downloadURL := fmt.Sprintf("%s/orders/%d", appURL, pedido.ID)
+	downloadURL := fmt.Sprintf("%s/orders/%d", appBaseURL(), pedido.ID)
 	go func() {
 		if err := email.EnviarConfirmacaoPedido(usuario.Email, album.Titulo, downloadURL); err != nil {
 			fmt.Printf("[WARN] falha ao enviar email de pedido: %v\n", err)
 		}
 	}()
 
+	// O pagamento é iniciado em seguida pelo frontend, na tela do pedido, onde o
+	// cliente escolhe o método: Checkout Pro (POST /api/orders/{id}/checkout) ou
+	// PIX embutido (POST /api/orders/{id}/pix).
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"pedido_id":   pedido.ID,
 		"valor_total": pedido.ValorTotal,
 		"fotos":       len(fotosParaPedido),
+	})
+}
+
+// carregarPedidoDoCliente busca o pedido e valida que pertence ao usuário e está
+// aguardando pagamento. Centraliza a validação dos endpoints de checkout.
+func carregarPedidoDoCliente(w http.ResponseWriter, r *http.Request) (*db.Pedido, bool) {
+	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return nil, false
+	}
+	userID := r.Context().Value(middleware.UserIDKey).(int64)
+
+	pedido, err := db.GetQueries().ObterPedidoPorID(r.Context(), orderID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "pedido não encontrado")
+		} else {
+			writeError(w, http.StatusInternalServerError, "erro ao buscar pedido")
+		}
+		return nil, false
+	}
+	if pedido.IDCliente != userID {
+		writeError(w, http.StatusForbidden, "acesso negado")
+		return nil, false
+	}
+	if pedido.Status == "pago" {
+		writeError(w, http.StatusConflict, "pedido já foi pago")
+		return nil, false
+	}
+	return &pedido, true
+}
+
+// POST /api/orders/{id}/checkout — cria a preference do Checkout Pro (redirect)
+// e devolve o init_point.
+func CreateCheckout(w http.ResponseWriter, r *http.Request) {
+	if !payment.Configured() {
+		writeError(w, http.StatusServiceUnavailable, "pagamento não configurado")
+		return
+	}
+	pedido, ok := carregarPedidoDoCliente(w, r)
+	if !ok {
+		return
+	}
+
+	queries := db.GetQueries()
+	album, _ := queries.ObterAlbumPorID(r.Context(), pedido.IDAlbum)
+	precoTotal, _ := strconv.ParseFloat(pedido.ValorTotal, 64)
+	appURL := appBaseURL()
+
+	pref, err := payment.CreatePreference(r.Context(), payment.PreferenceRequest{
+		Items: []payment.Item{{
+			Title:      album.Titulo,
+			Quantity:   1,
+			UnitPrice:  precoTotal,
+			CurrencyID: "BRL",
+		}},
+		ExternalReference: strconv.FormatInt(pedido.ID, 10),
+		BackURLs: payment.BackURLs{
+			Success: fmt.Sprintf("%s/orders/%d", appURL, pedido.ID),
+			Failure: fmt.Sprintf("%s/orders/%d", appURL, pedido.ID),
+			Pending: fmt.Sprintf("%s/orders/%d", appURL, pedido.ID),
+		},
+		AutoReturn:      "approved",
+		NotificationURL: apiBaseURL() + "/api/webhooks/mercadopago",
+	})
+	if err != nil {
+		fmt.Printf("[WARN] falha ao criar preference do Mercado Pago: %v\n", err)
+		writeError(w, http.StatusBadGateway, "erro ao iniciar checkout")
+		return
+	}
+
+	_ = queries.AtualizarPreferenciaPedido(r.Context(), pedido.ID, pref.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"init_point": pref.CheckoutURL()})
+}
+
+// POST /api/orders/{id}/pix — cria um pagamento PIX e devolve os dados do QR Code.
+func CreatePix(w http.ResponseWriter, r *http.Request) {
+	if !payment.Configured() {
+		writeError(w, http.StatusServiceUnavailable, "pagamento não configurado")
+		return
+	}
+	pedido, ok := carregarPedidoDoCliente(w, r)
+	if !ok {
+		return
+	}
+
+	queries := db.GetQueries()
+	album, _ := queries.ObterAlbumPorID(r.Context(), pedido.IDAlbum)
+	usuario, _ := queries.ObterUsuarioPorID(r.Context(), pedido.IDCliente)
+	precoTotal, _ := strconv.ParseFloat(pedido.ValorTotal, 64)
+
+	pix, err := payment.CreatePixPayment(r.Context(), payment.PixRequest{
+		TransactionAmount: precoTotal,
+		Description:       fmt.Sprintf("Pedido #%d — %s", pedido.ID, album.Titulo),
+		Payer:             payment.PixPayer{Email: usuario.Email, FirstName: usuario.Nome},
+		ExternalReference: strconv.FormatInt(pedido.ID, 10),
+		NotificationURL:   apiBaseURL() + "/api/webhooks/mercadopago",
+	})
+	if err != nil {
+		fmt.Printf("[WARN] falha ao criar pagamento PIX: %v\n", err)
+		// Surfaca a mensagem do Mercado Pago para facilitar o diagnóstico
+		// (ex.: chave PIX ausente, pagador = vendedor, credenciais test/prod).
+		writeError(w, http.StatusBadGateway, "erro ao gerar PIX: "+err.Error())
+		return
+	}
+
+	// Guarda o id do pagamento e o status inicial (normalmente 'pendente').
+	_ = queries.RegistrarPagamentoPedido(r.Context(), pedido.ID, payment.MapStatus(pix.Status), strconv.FormatInt(pix.ID, 10))
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"qr_code":        pix.QRCode,
+		"qr_code_base64": pix.QRCodeBase64,
+		"ticket_url":     pix.TicketURL,
+		"status":         payment.MapStatus(pix.Status),
 	})
 }
 
@@ -211,6 +368,12 @@ func GetDownloadLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Download liberado apenas para pedidos pagos.
+	if pedido.Status != "pago" {
+		writeError(w, http.StatusForbidden, "pagamento ainda não confirmado")
+		return
+	}
+
 	fotos, err := queries.ListarFotosPedido(r.Context(), orderID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao listar fotos")
@@ -238,4 +401,90 @@ func GetDownloadLinks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"downloads": links})
+}
+
+// POST /api/webhooks/mercadopago — notificação de pagamento do Mercado Pago.
+// Endpoint público (sem autenticação). O MP envia o tipo e o ID do recurso via
+// query params e/ou corpo JSON; consultamos o pagamento, resolvemos o pedido
+// pelo external_reference e atualizamos o status.
+func MercadoPagoWebhook(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("MercadoPagoWebhook")
+	// Responde 200 sempre que possível — o MP reenvia em caso de erro.
+	tipo := r.URL.Query().Get("type")
+	if tipo == "" {
+		tipo = r.URL.Query().Get("topic")
+	}
+	paymentID := r.URL.Query().Get("data.id")
+	if paymentID == "" {
+		paymentID = r.URL.Query().Get("id")
+	}
+
+	// Notificações mais recentes trazem os dados no corpo JSON.
+	if paymentID == "" || tipo == "" {
+		var body struct {
+			Type   string `json:"type"`
+			Action string `json:"action"`
+			Data   struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			if tipo == "" {
+				tipo = body.Type
+			}
+			if paymentID == "" {
+				paymentID = body.Data.ID
+			}
+			if tipo == "" && strings.HasPrefix(body.Action, "payment") {
+				tipo = "payment"
+			}
+		}
+	}
+
+	// Só tratamos notificações de pagamento.
+	if tipo != "payment" || paymentID == "" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	pay, err := payment.GetPayment(r.Context(), paymentID)
+	if err != nil {
+		fmt.Printf("[WARN] webhook MP: falha ao consultar pagamento %s: %v\n", paymentID, err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	pedidoID, err := strconv.ParseInt(pay.ExternalReference, 10, 64)
+	if err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	queries := db.GetQueries()
+	pedido, err := queries.ObterPedidoPorID(r.Context(), pedidoID)
+	if err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	novoStatus := payment.MapStatus(pay.Status)
+	if err := queries.RegistrarPagamentoPedido(r.Context(), pedidoID, novoStatus, strconv.FormatInt(pay.ID, 10)); err != nil {
+		fmt.Printf("[WARN] webhook MP: falha ao atualizar pedido %d: %v\n", pedidoID, err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Email de confirmação apenas na transição para 'pago' (evita duplicatas).
+	if novoStatus == "pago" && pedido.Status != "pago" {
+		usuario, _ := queries.ObterUsuarioPorID(r.Context(), pedido.IDCliente)
+		album, _ := queries.ObterAlbumPorID(r.Context(), pedido.IDAlbum)
+		downloadURL := fmt.Sprintf("%s/orders/%d", appBaseURL(), pedido.ID)
+		go func() {
+			if err := email.EnviarConfirmacaoPedido(usuario.Email, album.Titulo, downloadURL); err != nil {
+				fmt.Printf("[WARN] falha ao enviar email de pagamento: %v\n", err)
+			}
+		}()
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

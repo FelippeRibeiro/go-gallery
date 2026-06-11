@@ -2,23 +2,17 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-})
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
+  // Envia o cookie httpOnly de autenticação em toda requisição.
+  withCredentials: true,
 })
 
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    // Only force logout if the user had a token (session expired), not on public 401s
-    if (err.response?.status === 401 && localStorage.getItem('token')) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
+    // Só força logout se acreditávamos estar logados (há usuário em sessão);
+    // evita redirecionar em 401 de rotas públicas (ex.: probe inicial do /me).
+    if (err.response?.status === 401 && sessionStorage.getItem('user')) {
+      sessionStorage.removeItem('user')
       window.dispatchEvent(new Event('auth:logout'))
       window.location.href = '/login'
     }
