@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Calendar, ImageOff, Loader2 } from 'lucide-react'
 import { listPublicAlbums } from '@/api/albums'
+import PublicOrAppLayout from '@/components/PublicOrAppLayout'
 import type { Album } from '@/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -17,15 +18,8 @@ export default function PublicGallery() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight">Go Gallery</h1>
-        <Link to="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-          Entrar
-        </Link>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 py-10 space-y-8">
+    <PublicOrAppLayout>
+      <div className="space-y-8">
         <div>
           <h2 className="text-3xl font-bold">Galeria pública</h2>
           <p className="text-muted-foreground mt-1">Álbuns disponíveis para todos</p>
@@ -82,7 +76,7 @@ export default function PublicGallery() {
             ))}
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </PublicOrAppLayout>
   )
 }

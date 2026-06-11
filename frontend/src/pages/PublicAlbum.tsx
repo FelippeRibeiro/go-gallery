@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Calendar, ImageOff, Loader2 } from 'lucide-react'
 import { getPublicAlbum } from '@/api/albums'
+import PublicOrAppLayout from '@/components/PublicOrAppLayout'
 import type { Album, FotoPublica } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,15 +29,8 @@ export default function PublicAlbum() {
   }, [albumId])
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight">Go Gallery</h1>
-        <Link to="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-          Entrar
-        </Link>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 py-10 space-y-8">
+    <PublicOrAppLayout>
+      <div className="space-y-8">
         {loading && (
           <div className="space-y-4">
             <Skeleton className="h-8 w-1/3" />
@@ -136,7 +130,7 @@ export default function PublicAlbum() {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </PublicOrAppLayout>
   )
 }

@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Calendar, Camera, Globe, ImageOff, Images, Loader2, Users } from 'lucide-react'
-import { listPublicAlbums, listPublicPhotographers } from '@/api/albums'
-import { useAuth } from '@/context/AuthContext'
-import type { Album, FotografoPublico } from '@/types'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Calendar, Camera, Globe, ImageOff, Images, Loader2, Users } from 'lucide-react';
+import { listPublicAlbums, listPublicPhotographers } from '@/api/albums';
+import PublicOrAppLayout from '@/components/PublicOrAppLayout';
+import type { Album, FotografoPublico } from '@/types';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
-type Tab = 'albums' | 'fotografos'
+type Tab = 'albums' | 'fotografos';
 
 function AlbumCard({ album }: { album: Album }) {
   return (
@@ -16,11 +15,7 @@ function AlbumCard({ album }: { album: Album }) {
       <Card className="group overflow-hidden hover:ring-1 hover:ring-primary/40 transition-all cursor-pointer">
         <div className="h-44 overflow-hidden bg-muted">
           {album.CapaUrl?.Valid ? (
-            <img
-              src={album.CapaUrl.String}
-              alt={album.Titulo}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            />
+            <img src={album.CapaUrl.String} alt={album.Titulo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <ImageOff className="h-8 w-8 opacity-20" />
@@ -30,37 +25,35 @@ function AlbumCard({ album }: { album: Album }) {
         <CardContent className="p-4 space-y-2">
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-semibold leading-tight line-clamp-2">{album.Titulo}</h3>
-            <Badge variant="outline" className="shrink-0 text-xs">Público</Badge>
+            <Badge variant="outline" className="shrink-0 text-xs">
+              Público
+            </Badge>
           </div>
-          {album.Descricao?.Valid && (
-            <p className="text-xs text-muted-foreground line-clamp-2">{album.Descricao.String}</p>
-          )}
+          {album.Descricao?.Valid && <p className="text-xs text-muted-foreground line-clamp-2">{album.Descricao.String}</p>}
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3" />
             {new Date(album.DataEvento).toLocaleDateString('pt-BR', {
-              day: '2-digit', month: 'short', year: 'numeric',
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
             })}
           </div>
         </CardContent>
       </Card>
     </Link>
-  )
+  );
 }
 
 function PhotographerCard({ fotografo }: { fotografo: FotografoPublico }) {
-  const avatarUrl = fotografo.FotoPerfil?.Valid ? fotografo.FotoPerfil.String : null
-  const bio = fotografo.Bio?.Valid ? fotografo.Bio.String : null
+  const avatarUrl = fotografo.FotoPerfil?.Valid ? fotografo.FotoPerfil.String : null;
+  const bio = fotografo.Bio?.Valid ? fotografo.Bio.String : null;
 
   return (
     <Link to={`/p/${fotografo.ID}`}>
       <Card className="group hover:ring-1 hover:ring-primary/40 transition-all cursor-pointer">
         <CardContent className="p-5 flex gap-4 items-start">
           <div className="shrink-0 w-14 h-14 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt={fotografo.Nome} className="w-full h-full object-cover" />
-            ) : (
-              <Camera className="h-6 w-6 text-muted-foreground/40" />
-            )}
+            {avatarUrl ? <img src={avatarUrl} alt={fotografo.Nome} className="w-full h-full object-cover" /> : <Camera className="h-6 w-6 text-muted-foreground/40" />}
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold group-hover:text-primary transition-colors truncate">{fotografo.Nome}</h3>
@@ -73,56 +66,38 @@ function PhotographerCard({ fotografo }: { fotografo: FotografoPublico }) {
         </CardContent>
       </Card>
     </Link>
-  )
+  );
 }
 
 export default function Discover() {
-  const { isAuthenticated } = useAuth()
-  const [tab, setTab] = useState<Tab>('albums')
-  const [albums, setAlbums] = useState<Album[]>([])
-  const [fotografos, setFotografos] = useState<FotografoPublico[]>([])
-  const [loadingAlbums, setLoadingAlbums] = useState(true)
-  const [loadingFotografos, setLoadingFotografos] = useState(false)
-  const [fotosLoaded, setFotosLoaded] = useState(false)
+  const [tab, setTab] = useState<Tab>('albums');
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [fotografos, setFotografos] = useState<FotografoPublico[]>([]);
+  const [loadingAlbums, setLoadingAlbums] = useState(true);
+  const [loadingFotografos, setLoadingFotografos] = useState(false);
+  const [fotosLoaded, setFotosLoaded] = useState(false);
 
   useEffect(() => {
     listPublicAlbums()
       .then(setAlbums)
-      .finally(() => setLoadingAlbums(false))
-  }, [])
+      .finally(() => setLoadingAlbums(false));
+  }, []);
 
   useEffect(() => {
     if (tab === 'fotografos' && !fotosLoaded) {
-      setLoadingFotografos(true)
+      setLoadingFotografos(true);
       listPublicPhotographers()
         .then(setFotografos)
         .finally(() => {
-          setLoadingFotografos(false)
-          setFotosLoaded(true)
-        })
+          setLoadingFotografos(false);
+          setFotosLoaded(true);
+        });
     }
-  }, [tab, fotosLoaded])
+  }, [tab, fotosLoaded]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Camera className="h-5 w-5 text-primary" />
-          <span className="text-lg font-bold tracking-tight">Go Gallery</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {isAuthenticated ? (
-            <Button variant="ghost" size="sm" asChild><Link to="/dashboard">Meus álbuns</Link></Button>
-          ) : (
-            <>
-              <Button variant="ghost" size="sm" asChild><Link to="/login">Entrar</Link></Button>
-              <Button size="sm" asChild><Link to="/register">Criar conta</Link></Button>
-            </>
-          )}
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 py-10 space-y-8">
+    <PublicOrAppLayout>
+      <div className="space-y-8">
         <div>
           <h2 className="text-3xl font-bold">Descobrir</h2>
           <p className="text-muted-foreground mt-1">Explore álbuns e fotógrafos</p>
@@ -133,23 +108,21 @@ export default function Discover() {
           <button
             onClick={() => setTab('albums')}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === 'albums'
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              tab === 'albums' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
             <Globe className="h-4 w-4" />
             Álbuns
             {albums.length > 0 && (
-              <Badge variant="secondary" className="text-xs">{albums.length}</Badge>
+              <Badge variant="secondary" className="text-xs">
+                {albums.length}
+              </Badge>
             )}
           </button>
           <button
             onClick={() => setTab('fotografos')}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === 'fotografos'
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              tab === 'fotografos' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
             <Users className="h-4 w-4" />
@@ -173,7 +146,9 @@ export default function Discover() {
             )}
             {!loadingAlbums && albums.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {albums.map((album) => <AlbumCard key={album.ID} album={album} />)}
+                {albums.map((album) => (
+                  <AlbumCard key={album.ID} album={album} />
+                ))}
               </div>
             )}
           </>
@@ -195,12 +170,14 @@ export default function Discover() {
             )}
             {!loadingFotografos && fotografos.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {fotografos.map((f) => <PhotographerCard key={f.ID} fotografo={f} />)}
+                {fotografos.map((f) => (
+                  <PhotographerCard key={f.ID} fotografo={f} />
+                ))}
               </div>
             )}
           </>
         )}
-      </main>
-    </div>
-  )
+      </div>
+    </PublicOrAppLayout>
+  );
 }

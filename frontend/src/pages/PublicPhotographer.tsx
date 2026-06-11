@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Calendar, Camera, Images } from 'lucide-react'
 import { getPublicPhotographer } from '@/api/albums'
-import { useAuth } from '@/context/AuthContext'
+import PublicOrAppLayout from '@/components/PublicOrAppLayout'
 import type { Album, FotografoPublicoResponse } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -35,7 +35,6 @@ function AlbumCard({ album }: { album: Album }) {
 
 export default function PublicPhotographer() {
   const { id } = useParams<{ id: string }>()
-  const { isAuthenticated } = useAuth()
   const [data, setData] = useState<FotografoPublicoResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -50,22 +49,8 @@ export default function PublicPhotographer() {
   const bio = data?.fotografo?.bio?.Valid ? data.fotografo.bio.String : null
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Camera className="h-5 w-5 text-primary" />
-          <span className="text-lg font-bold tracking-tight">Go Gallery</span>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" asChild><Link to="/discover">Descobrir</Link></Button>
-          {isAuthenticated
-            ? <Button size="sm" asChild><Link to="/dashboard">Meus álbuns</Link></Button>
-            : <Button size="sm" asChild><Link to="/login">Entrar</Link></Button>
-          }
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 py-10 space-y-8">
+    <PublicOrAppLayout>
+      <div className="space-y-8 max-w-5xl mx-auto">
         {loading && (
           <div className="space-y-6">
             <div className="flex items-center gap-4">
@@ -127,7 +112,7 @@ export default function PublicPhotographer() {
             )}
           </>
         )}
-      </main>
-    </div>
+      </div>
+    </PublicOrAppLayout>
   )
 }
