@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Camera, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/context/AuthContext'
@@ -14,13 +14,15 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
       await login(email, senha)
-      navigate('/dashboard')
+      const redirect = searchParams.get('redirect')
+      navigate(redirect || '/dashboard')
     } catch {
       toast.error('Credenciais inválidas', { description: 'Verifique seu e-mail e senha.' })
     } finally {

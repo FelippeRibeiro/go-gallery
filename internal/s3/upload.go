@@ -60,6 +60,17 @@ func ObjectURL(key string) string {
 	return fmt.Sprintf("%s/%s/%s", getEndpoint(), BucketName, key)
 }
 
+// PublicURL builds the public URL from a value stored in the database.
+// O banco guarda apenas a key (path). Esta função monta a URL no momento da
+// leitura com o S3_ENDPOINT atual. É tolerante a valores legados que já
+// contenham a URL completa (normaliza para a key antes de remontar).
+func PublicURL(keyOrURL string) string {
+	if keyOrURL == "" {
+		return ""
+	}
+	return ObjectURL(KeyFromURL(keyOrURL))
+}
+
 // AlbumPhotoKeys returns the S3 keys for a photo within an album.
 // Structure: albums/{albumID}/original-{photoID}.{ext}
 //
@@ -84,10 +95,18 @@ func AlbumCoverKey(albumID int64) string {
 	return fmt.Sprintf("albums/%d/cover.jpg", albumID)
 }
 
-// KeyFromURL extracts the S3 object key from a full URL.
-func KeyFromURL(url string) string {
-	prefix := getEndpoint() + "/" + BucketName + "/"
-	return strings.TrimPrefix(url, prefix)
+// KeyFromURL extracts the S3 object key from a stored value.
+// Aceita tanto uma key pura quanto uma URL completa (legado), sendo
+// independente do endpoint atual.
+func KeyFromURL(value string) string {
+	if !strings.Contains(value, "://") {
+		return value
+	}
+	marker := "/" + BucketName + "/"
+	if idx := strings.Index(value, marker); idx != -1 {
+		return value[idx+len(marker):]
+	}
+	return value
 }
 
 // PresignGetObject generates a pre-signed GET URL for a private S3 object.

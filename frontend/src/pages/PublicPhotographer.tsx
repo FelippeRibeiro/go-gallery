@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 function AlbumCard({ album }: { album: Album }) {
   return (
-    <Link to={`/gallery/${album.ID}`}>
+    <Link to={`/albums/${album.ID}`}>
       <Card className="group overflow-hidden hover:border-primary/50 transition-colors cursor-pointer">
         <div className="aspect-video bg-muted overflow-hidden relative">
           {album.CapaUrl?.Valid ? (

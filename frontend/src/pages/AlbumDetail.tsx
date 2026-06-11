@@ -20,14 +20,14 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import Layout from '@/components/Layout'
+import PublicOrAppLayout from '@/components/PublicOrAppLayout'
 import PhotoGrid from '@/components/PhotoGrid'
 import PhotoUpload from '@/components/PhotoUpload'
 import InviteModal from '@/components/InviteModal'
 import InvitesManager from '@/components/InvitesManager'
 import Lightbox from '@/components/Lightbox'
 import { useAuth } from '@/context/AuthContext'
-import { getAlbum, updateVisibility, deletePhoto, uploadCover, listPhotos, reorderPhotos } from '@/api/albums'
+import { getAlbum, getPublicAlbum, updateVisibility, deletePhoto, uploadCover, listPhotos, reorderPhotos } from '@/api/albums'
 import { createOrder } from '@/api/orders'
 import type { Album, Foto, FotoPublica } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -59,7 +59,7 @@ function AlbumDetailSkeleton() {
 
 // ─── Client view ──────────────────────────────────────────────────────────────
 
-function ClientAlbumView({ album, fotos }: { album: Album; fotos: FotoPublica[] }) {
+function ClientAlbumView({ album, fotos, authenticated }: { album: Album; fotos: FotoPublica[]; authenticated: boolean }) {
   const navigate = useNavigate()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
@@ -81,6 +81,10 @@ function ClientAlbumView({ album, fotos }: { album: Album; fotos: FotoPublica[] 
     : selected.size * unitPrice
 
   const handleFinalize = async () => {
+    if (!authenticated) {
+      navigate(`/login?redirect=/albums/${album.ID}`)
+      return
+    }
     setOrdering(true)
     try {
       const fotoIds = album.Lote ? [] : Array.from(selected)
@@ -107,7 +111,7 @@ function ClientAlbumView({ album, fotos }: { album: Album; fotos: FotoPublica[] 
       {/* Header */}
       <div className="flex items-start gap-3">
         <Button variant="ghost" size="icon" asChild className="shrink-0 mt-0.5">
-          <Link to="/dashboard"><ArrowLeft className="h-4 w-4" /></Link>
+          <Link to={authenticated ? '/dashboard' : '/discover'}><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div className="min-w-0">
           <h1 className="text-2xl font-bold truncate">{album.Titulo}</h1>
@@ -137,8 +141,35 @@ function ClientAlbumView({ album, fotos }: { album: Album; fotos: FotoPublica[] 
 
       <Separator />
 
-      {/* Select mode toggle */}
-      {fotos.length > 0 && !album.Lote && (
+      {/* Visitante deslogado: apenas visualização */}
+      {!authenticated && fotos.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          <Link to={`/login?redirect=/albums/${album.ID}`} className="text-primary hover:underline font-medium">
+            Entre na sua conta
+          </Link>{' '}
+          para selecionar e comprar fotos.
+        </p>
+      )}
+
+      {/* Compra de álbum completo (lote) — somente autenticado */}
+      {authenticated && fotos.length > 0 && album.Lote && (
+        <div className="flex items-center justify-between rounded-lg border border-border p-4">
+          <div>
+            <p className="text-sm font-medium">Álbum completo</p>
+            <p className="text-xs text-muted-foreground">
+              {fotos.length} foto{fotos.length !== 1 ? 's' : ''} por R$ {Number(album.ValorAlbum).toFixed(2)}
+            </p>
+          </div>
+          <Button size="sm" onClick={handleFinalize} disabled={ordering}>
+            {ordering && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            <ShoppingCart className="h-4 w-4 mr-1" />
+            Comprar álbum
+          </Button>
+        </div>
+      )}
+
+      {/* Select mode toggle (compra por foto) — somente autenticado */}
+      {authenticated && fotos.length > 0 && !album.Lote && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             {selectMode ? 'Clique nas fotos para selecionar' : 'Ative a seleção para escolher fotos'}
@@ -507,43 +538,79 @@ function PhotographerAlbumView({ album: initialAlbum, fotos: initialFotos }: { a
 
 // ─── Main (route-level) ───────────────────────────────────────────────────────
 
+type ViewMode = 'manage' | 'view'
+
 export default function AlbumDetail() {
   const { id } = useParams<{ id: string }>()
   const albumId = Number(id)
-  const { user } = useAuth()
+  const { isAuthenticated } = useAuth()
 
   const [album, setAlbum] = useState<Album | null>(null)
   const [fotos, setFotos] = useState<Foto[] | FotoPublica[]>([])
+  const [mode, setMode] = useState<ViewMode>('view')
   const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    getAlbum(albumId)
-      .then((res) => {
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+      setNotFound(false)
+
+      // Usuário autenticado: tenta acesso por vínculo (dono/colaborador/cliente)
+      // ou como visitante de álbum público — o backend retorna o "papel".
+      if (isAuthenticated) {
+        try {
+          const res = await getAlbum(albumId)
+          if (cancelled) return
+          setAlbum(res.album)
+          setFotos(res.fotos)
+          setMode(res.papel === 'dono' || res.papel === 'colaborador' ? 'manage' : 'view')
+          setLoading(false)
+          return
+        } catch {
+          // Sem acesso autenticado — tenta como álbum público
+        }
+      }
+
+      try {
+        const res = await getPublicAlbum(albumId)
+        if (cancelled) return
         setAlbum(res.album)
         setFotos(res.fotos)
-      })
-      .catch(() => toast.error('Álbum não encontrado'))
-      .finally(() => setLoading(false))
-  }, [albumId])
+        setMode('view')
+      } catch {
+        if (!cancelled) setNotFound(true)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
 
-  if (loading) return <Layout><AlbumDetailSkeleton /></Layout>
+    load()
+    return () => { cancelled = true }
+  }, [albumId, isAuthenticated])
 
-  if (!album) return (
-    <Layout>
+  if (loading) return <PublicOrAppLayout><AlbumDetailSkeleton /></PublicOrAppLayout>
+
+  if (notFound || !album) return (
+    <PublicOrAppLayout>
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <p className="text-muted-foreground">Álbum não encontrado.</p>
-        <Button asChild variant="outline"><Link to="/dashboard">Voltar</Link></Button>
+        <Button asChild variant="outline">
+          <Link to={isAuthenticated ? '/dashboard' : '/discover'}>Voltar</Link>
+        </Button>
       </div>
-    </Layout>
+    </PublicOrAppLayout>
   )
 
   return (
-    <Layout>
-      {user?.tipo === 'cliente' ? (
-        <ClientAlbumView album={album} fotos={fotos as FotoPublica[]} />
-      ) : (
+    <PublicOrAppLayout>
+      {mode === 'manage' ? (
         <PhotographerAlbumView album={album} fotos={fotos as Foto[]} />
+      ) : (
+        <ClientAlbumView album={album} fotos={fotos as FotoPublica[]} authenticated={isAuthenticated} />
       )}
-    </Layout>
+    </PublicOrAppLayout>
   )
 }

@@ -41,7 +41,7 @@ export default function PublicGallery() {
         {!loading && albums.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {albums.map((album) => (
-              <Link key={album.ID} to={`/gallery/${album.ID}`}>
+              <Link key={album.ID} to={`/albums/${album.ID}`}>
                 <Card className="overflow-hidden hover:ring-1 hover:ring-primary/40 transition-all cursor-pointer group">
                   {album.CapaUrl?.Valid ? (
                     <div className="h-44 overflow-hidden">

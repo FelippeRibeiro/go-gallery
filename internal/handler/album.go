@@ -63,7 +63,7 @@ func ListAlbums(w http.ResponseWriter, r *http.Request) {
 		albums = filtered
 	}
 
-	writeJSON(w, http.StatusOK, albums)
+	writeJSON(w, http.StatusOK, comURLAlbuns(albums))
 }
 
 // POST /api/albums
@@ -117,7 +117,7 @@ func CreateAlbum(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "erro ao criar álbum")
 		return
 	}
-	writeJSON(w, http.StatusCreated, album)
+	writeJSON(w, http.StatusCreated, comURLAlbum(album))
 }
 
 // GET /api/albums/{id}
@@ -129,7 +129,6 @@ func GetAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := r.Context().Value(middleware.UserIDKey).(int64)
-	tipo, _ := r.Context().Value(middleware.UserTipoKey).(string)
 
 	queries := db.GetQueries()
 	album, err := queries.ObterAlbumPorID(r.Context(), albumID)
@@ -142,13 +141,20 @@ func GetAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clientes só podem ver álbuns aos quais foram convidados
-	if tipo == "cliente" {
-		hasAccess, _ := queries.VerificarAcessoClienteAlbum(r.Context(), userID, albumID)
-		if !hasAccess {
-			writeError(w, http.StatusForbidden, "acesso negado")
-			return
-		}
+	// Determina o papel do usuário em relação ao álbum
+	papel := "visitante"
+	if album.IDFotografo == userID {
+		papel = "dono"
+	} else if isCollab, _ := queries.VerificarFotografoAlbum(r.Context(), userID, albumID); isCollab {
+		papel = "colaborador"
+	} else if hasAccess, _ := queries.VerificarAcessoClienteAlbum(r.Context(), userID, albumID); hasAccess {
+		papel = "cliente"
+	}
+
+	// Sem vínculo com o álbum: só pode visualizar se for público
+	if papel == "visitante" && !album.Publico {
+		writeError(w, http.StatusForbidden, "acesso negado")
+		return
 	}
 
 	fotos, err := queries.ListarFotografiasPorAlbum(r.Context(), albumID)
@@ -156,17 +162,18 @@ func GetAlbum(w http.ResponseWriter, r *http.Request) {
 		fotos = []db.Fotografia{}
 	}
 
-	// Clientes recebem apenas previews (sem url_alta)
-	if tipo == "cliente" {
-		fotosCliente := make([]fotoPublicaDTO, len(fotos))
-		for i, f := range fotos {
-			fotosCliente[i] = fotoPublicaDTO{ID: f.ID, UrlBaixa: f.UrlBaixa, CriadoEm: f.CriadoEm}
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"album": album, "fotos": fotosCliente})
+	// Dono e colaboradores recebem as URLs originais (url_alta)
+	if papel == "dono" || papel == "colaborador" {
+		writeJSON(w, http.StatusOK, map[string]any{"album": comURLAlbum(album), "fotos": comURLFotos(fotos), "papel": papel})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"album": album, "fotos": fotos})
+	// Clientes e visitantes recebem apenas previews (sem url_alta)
+	fotosPublicas := make([]fotoPublicaDTO, len(fotos))
+	for i, f := range fotos {
+		fotosPublicas[i] = fotoPublicaDTO{ID: f.ID, UrlBaixa: s3client.PublicURL(f.UrlBaixa), CriadoEm: f.CriadoEm}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"album": comURLAlbum(album), "fotos": fotosPublicas, "papel": papel})
 }
 
 // PATCH /api/albums/{id}/visibility  — somente dono
@@ -196,7 +203,7 @@ func UpdateVisibility(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "erro ao atualizar álbum")
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, http.StatusOK, comURLAlbum(updated))
 }
 
 // POST /api/albums/{id}/invite  — convite de cliente, somente dono, somente privado
@@ -515,8 +522,8 @@ func UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	}
 
 	foto, err := queries.CriarFotografia(ctx, db.CriarFotografiaParams{
-		UrlAlta:       s3client.ObjectURL(originalKey),
-		UrlBaixa:      s3client.ObjectURL(previewKey),
+		UrlAlta:       originalKey,
+		UrlBaixa:      previewKey,
 		IDFotografo:   userID,
 		IDAlbum:       albumID,
 		ValorUnitario: valorUnitario,
@@ -526,7 +533,7 @@ func UploadPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, foto)
+	writeJSON(w, http.StatusCreated, comURLFoto(foto))
 }
 
 // DELETE /api/albums/{id}/photos/{photoId}  — dono OU colaborador
@@ -616,13 +623,13 @@ func UploadCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coverURL := s3client.ObjectURL(coverKey)
-	album, err := db.GetQueries().AtualizarCapaAlbum(r.Context(), albumID, coverURL)
+	// Grava apenas a key; a URL é montada na leitura.
+	album, err := db.GetQueries().AtualizarCapaAlbum(r.Context(), albumID, coverKey)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao atualizar capa no banco")
 		return
 	}
-	writeJSON(w, http.StatusOK, album)
+	writeJSON(w, http.StatusOK, comURLAlbum(album))
 }
 
 // POST /api/albums/{id}/invites/{inviteId}/resend — somente dono
@@ -758,16 +765,47 @@ func ListPhotos(w http.ResponseWriter, r *http.Request) {
 	if tipo == "cliente" {
 		fotosCliente := make([]fotoPublicaDTO, len(fotos))
 		for i, f := range fotos {
-			fotosCliente[i] = fotoPublicaDTO{ID: f.ID, UrlBaixa: f.UrlBaixa, CriadoEm: f.CriadoEm}
+			fotosCliente[i] = fotoPublicaDTO{ID: f.ID, UrlBaixa: s3client.PublicURL(f.UrlBaixa), CriadoEm: f.CriadoEm}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"fotos": fotosCliente, "total": total, "offset": offset})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"fotos": fotos, "total": total, "offset": offset})
+	writeJSON(w, http.StatusOK, map[string]any{"fotos": comURLFotos(fotos), "total": total, "offset": offset})
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
+
+// comURLAlbum monta a URL pública da capa a partir da key gravada no banco.
+func comURLAlbum(a db.Albun) db.Albun {
+	if a.CapaUrl.Valid && a.CapaUrl.String != "" {
+		a.CapaUrl.String = s3client.PublicURL(a.CapaUrl.String)
+	}
+	return a
+}
+
+func comURLAlbuns(albuns []db.Albun) []db.Albun {
+	out := make([]db.Albun, len(albuns))
+	for i, a := range albuns {
+		out[i] = comURLAlbum(a)
+	}
+	return out
+}
+
+// comURLFoto monta as URLs públicas da foto a partir das keys gravadas no banco.
+func comURLFoto(f db.Fotografia) db.Fotografia {
+	f.UrlAlta = s3client.PublicURL(f.UrlAlta)
+	f.UrlBaixa = s3client.PublicURL(f.UrlBaixa)
+	return f
+}
+
+func comURLFotos(fotos []db.Fotografia) []db.Fotografia {
+	out := make([]db.Fotografia, len(fotos))
+	for i, f := range fotos {
+		out[i] = comURLFoto(f)
+	}
+	return out
+}
 
 var errAlbumNotFound = errors.New("not_found")
 var errForbidden = errors.New("forbidden")

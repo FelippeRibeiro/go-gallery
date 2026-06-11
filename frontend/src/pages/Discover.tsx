@@ -11,7 +11,7 @@ type Tab = 'albums' | 'fotografos';
 
 function AlbumCard({ album }: { album: Album }) {
   return (
-    <Link to={`/gallery/${album.ID}`}>
+    <Link to={`/albums/${album.ID}`}>
       <Card className="group overflow-hidden hover:ring-1 hover:ring-primary/40 transition-all cursor-pointer">
         <div className="h-44 overflow-hidden bg-muted">
           {album.CapaUrl?.Valid ? (

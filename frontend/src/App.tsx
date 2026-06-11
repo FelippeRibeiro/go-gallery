@@ -8,7 +8,6 @@ import AlbumCreate from '@/pages/AlbumCreate'
 import AlbumDetail from '@/pages/AlbumDetail'
 import AcceptInvite from '@/pages/AcceptInvite'
 import PublicGallery from '@/pages/PublicGallery'
-import PublicAlbum from '@/pages/PublicAlbum'
 import Order from '@/pages/Order'
 import PublicPhotographer from '@/pages/PublicPhotographer'
 import Discover from '@/pages/Discover'
@@ -30,9 +29,10 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="/gallery" element={<PublicGallery />} />
-          <Route path="/gallery/:id" element={<PublicAlbum />} />
           <Route path="/p/:id" element={<PublicPhotographer />} />
           <Route path="/discover" element={<Discover />} />
+          {/* Álbum: rota única para dono, colaborador, cliente e visitante público */}
+          <Route path="/albums/:id" element={<AlbumDetail />} />
 
           {/* Protected routes */}
           <Route
@@ -42,10 +42,6 @@ export default function App() {
           <Route
             path="/albums/new"
             element={<PrivateRoute><AlbumCreate /></PrivateRoute>}
-          />
-          <Route
-            path="/albums/:id"
-            element={<PrivateRoute><AlbumDetail /></PrivateRoute>}
           />
           <Route
             path="/orders/:id"

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/FelippeRibeiro/go-gallery/internal/db"
+	s3client "github.com/FelippeRibeiro/go-gallery/internal/s3"
 )
 
 type fotoPublicaDTO struct {
@@ -26,7 +27,7 @@ func ListPublicAlbums(w http.ResponseWriter, r *http.Request) {
 	if albums == nil {
 		albums = []db.Albun{}
 	}
-	writeJSON(w, http.StatusOK, albums)
+	writeJSON(w, http.StatusOK, comURLAlbuns(albums))
 }
 
 // GET /api/public/albums/{id}
@@ -60,14 +61,15 @@ func GetPublicAlbum(w http.ResponseWriter, r *http.Request) {
 	for i, f := range fotos {
 		fotosPublicas[i] = fotoPublicaDTO{
 			ID:       f.ID,
-			UrlBaixa: f.UrlBaixa,
+			UrlBaixa: s3client.PublicURL(f.UrlBaixa),
 			CriadoEm: f.CriadoEm,
 		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"album": album,
+		"album": comURLAlbum(album),
 		"fotos": fotosPublicas,
+		"papel": "visitante",
 	})
 }
 
@@ -80,6 +82,11 @@ func ListPublicPhotographers(w http.ResponseWriter, r *http.Request) {
 	}
 	if fotografos == nil {
 		fotografos = []db.FotografoPublico{}
+	}
+	for i := range fotografos {
+		if fotografos[i].FotoPerfil.Valid {
+			fotografos[i].FotoPerfil.String = s3client.PublicURL(fotografos[i].FotoPerfil.String)
+		}
 	}
 	writeJSON(w, http.StatusOK, fotografos)
 }
@@ -105,13 +112,18 @@ func GetPublicPhotographer(w http.ResponseWriter, r *http.Request) {
 		albums = []db.Albun{}
 	}
 
+	fotoPerfil := fotografo.FotoPerfil
+	if fotoPerfil.Valid {
+		fotoPerfil.String = s3client.PublicURL(fotoPerfil.String)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"fotografo": map[string]any{
 			"id":          fotografo.ID,
 			"nome":        fotografo.Nome,
-			"foto_perfil": fotografo.FotoPerfil,
+			"foto_perfil": fotoPerfil,
 			"bio":         fotografo.Bio,
 		},
-		"albums": albums,
+		"albums": comURLAlbuns(albums),
 	})
 }

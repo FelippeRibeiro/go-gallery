@@ -150,12 +150,15 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 	if fotos == nil {
 		fotos = []db.PedidoFotoInfo{}
 	}
+	for i := range fotos {
+		fotos[i].UrlBaixa = s3client.PublicURL(fotos[i].UrlBaixa)
+	}
 
 	album, _ := queries.ObterAlbumPorID(r.Context(), pedido.IDAlbum)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"pedido": pedido,
-		"album":  album,
+		"album":  comURLAlbum(album),
 		"fotos":  fotos,
 	})
 }
@@ -199,14 +202,14 @@ func GetDownloadLinks(w http.ResponseWriter, r *http.Request) {
 
 	links := make([]DownloadLink, 0, len(fotos))
 	for _, f := range fotos {
-		key := s3client.KeyFromURL(f.UrlAlta)
-		presignedURL, err := s3client.PresignGetObject(r.Context(), key, 24*time.Hour)
+		// url_alta guarda apenas a key (path) — usada direto para gerar o presign.
+		presignedURL, err := s3client.PresignGetObject(r.Context(), s3client.KeyFromURL(f.UrlAlta), 24*time.Hour)
 		if err != nil {
 			presignedURL = ""
 		}
 		links = append(links, DownloadLink{
 			FotoID:      f.IDFotografia,
-			UrlBaixa:    f.UrlBaixa,
+			UrlBaixa:    s3client.PublicURL(f.UrlBaixa),
 			UrlDownload: presignedURL,
 		})
 	}

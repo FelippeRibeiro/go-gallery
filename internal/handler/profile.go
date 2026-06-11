@@ -22,12 +22,17 @@ func GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fotoPerfil := u.FotoPerfil
+	if fotoPerfil.Valid {
+		fotoPerfil.String = s3client.PublicURL(fotoPerfil.String)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":          u.ID,
 		"nome":        u.Nome,
 		"email":       u.Email,
 		"tipo":        u.Tipo,
-		"foto_perfil": u.FotoPerfil,
+		"foto_perfil": fotoPerfil,
 		"bio":         u.Bio,
 	})
 }
@@ -92,11 +97,11 @@ func UploadProfilePhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := s3client.ObjectURL(key)
-	if err := db.GetQueries().AtualizarFotoPerfilFotografo(r.Context(), userID, url); err != nil {
+	// Grava apenas a key; a URL é montada na leitura.
+	if err := db.GetQueries().AtualizarFotoPerfilFotografo(r.Context(), userID, key); err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao salvar url da foto")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"foto_perfil": url})
+	writeJSON(w, http.StatusOK, map[string]string{"foto_perfil": s3client.PublicURL(key)})
 }

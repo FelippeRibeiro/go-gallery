@@ -14,8 +14,10 @@ export const createAlbum = (data: {
   valor_unitario_fotografia?: string
 }) => api.post<Album>('/albums', data).then((r) => r.data)
 
+export type PapelAlbum = 'dono' | 'colaborador' | 'cliente' | 'visitante'
+
 export const getAlbum = (id: number) =>
-  api.get<AlbumComFotos>(`/albums/${id}`).then((r) => r.data)
+  api.get<AlbumComFotos & { papel?: PapelAlbum }>(`/albums/${id}`).then((r) => r.data)
 
 export const updateVisibility = (albumId: number, publico: boolean) =>
   api.patch<Album>(`/albums/${albumId}/visibility`, { publico }).then((r) => r.data)
@@ -49,7 +51,7 @@ export const listPublicAlbums = () =>
   api.get<Album[]>('/public/albums').then((r) => r.data)
 
 export const getPublicAlbum = (id: number) =>
-  api.get<{ album: Album; fotos: FotoPublica[] }>(`/public/albums/${id}`).then((r) => r.data)
+  api.get<{ album: Album; fotos: FotoPublica[]; papel?: PapelAlbum }>(`/public/albums/${id}`).then((r) => r.data)
 
 export const listInvites = (albumId: number) =>
   api.get<InvitesResponse>(`/albums/${albumId}/invites`).then((r) => r.data)
