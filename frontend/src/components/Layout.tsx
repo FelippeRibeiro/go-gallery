@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Camera, FolderOpen, LogOut, Menu, PlusCircle, X } from 'lucide-react'
+import { Camera, FolderOpen, Globe, LogOut, Menu, PlusCircle, User, X } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -13,6 +13,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/dashboard', icon: FolderOpen, label: 'Álbuns' },
     ...(user?.tipo !== 'cliente'
       ? [{ to: '/albums/new', icon: PlusCircle, label: 'Novo álbum' }]
+      : []),
+    { to: '/discover', icon: Globe, label: 'Descobrir' },
+    ...(user?.tipo === 'fotografo'
+      ? [{ to: '/profile', icon: User, label: 'Meu perfil' }]
       : []),
   ]
   const navigate = useNavigate()

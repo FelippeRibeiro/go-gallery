@@ -97,6 +97,21 @@ func sendSSL(addr, host string, auth smtp.Auth, from, to string, msg []byte) err
 }
 
 
+func EnviarConfirmacaoPedido(toEmail, albumTitulo string, downloadURL string) error {
+	body := fmt.Sprintf(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#333">
+  <h2 style="color:#7c3aed">Pedido confirmado!</h2>
+  <p>Seu pedido de fotos do álbum <strong>%s</strong> foi confirmado.</p>
+  <p>Clique no botão abaixo para acessar e baixar suas fotos originais:</p>
+  <a href="%s" style="display:inline-block;background:#7c3aed;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold">
+    Baixar fotos
+  </a>
+  <p style="margin-top:24px;font-size:12px;color:#888">Os links de download expiram em 24 horas.</p>
+</body></html>`, albumTitulo, downloadURL)
+	return send(toEmail, "Pedido confirmado: "+albumTitulo, body)
+}
+
 func EnviarConviteAlbum(toEmail, albumTitulo, token, capaURL string) error {
 	appURL := os.Getenv("APP_URL")
 	if appURL == "" {

@@ -9,6 +9,10 @@ import AlbumDetail from '@/pages/AlbumDetail'
 import AcceptInvite from '@/pages/AcceptInvite'
 import PublicGallery from '@/pages/PublicGallery'
 import PublicAlbum from '@/pages/PublicAlbum'
+import Order from '@/pages/Order'
+import PublicPhotographer from '@/pages/PublicPhotographer'
+import Discover from '@/pages/Discover'
+import Profile from '@/pages/Profile'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -27,6 +31,8 @@ export default function App() {
           <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="/gallery" element={<PublicGallery />} />
           <Route path="/gallery/:id" element={<PublicAlbum />} />
+          <Route path="/p/:id" element={<PublicPhotographer />} />
+          <Route path="/discover" element={<Discover />} />
 
           {/* Protected routes */}
           <Route
@@ -41,8 +47,16 @@ export default function App() {
             path="/albums/:id"
             element={<PrivateRoute><AlbumDetail /></PrivateRoute>}
           />
+          <Route
+            path="/orders/:id"
+            element={<PrivateRoute><Order /></PrivateRoute>}
+          />
+          <Route
+            path="/profile"
+            element={<PrivateRoute><Profile /></PrivateRoute>}
+          />
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/discover" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

@@ -1,5 +1,5 @@
 import api from './client'
-import type { Album, AlbumComFotos, FotoPublica, InvitesResponse } from '../types'
+import type { Album, AlbumComFotos, Foto, FotoPublica, FotografoPublico, FotografoPublicoResponse, InvitesResponse } from '../types'
 
 export const listAlbums = () =>
   api.get<Album[]>('/albums').then((r) => r.data)
@@ -23,11 +23,14 @@ export const updateVisibility = (albumId: number, publico: boolean) =>
 export const inviteClient = (albumId: number, email: string) =>
   api.post(`/albums/${albumId}/invite`, { email }).then((r) => r.data)
 
-export const uploadPhoto = (albumId: number, file: File) => {
+export const uploadPhoto = (albumId: number, file: File, onProgress?: (pct: number) => void) => {
   const form = new FormData()
   form.append('file', file)
-  return api.post(`/albums/${albumId}/photos`, form, {
+  return api.post<Foto>(`/albums/${albumId}/photos`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (e) => {
+      if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total))
+    },
   }).then((r) => r.data)
 }
 
@@ -62,3 +65,21 @@ export const removePhotographer = (albumId: number, faId: number) =>
 
 export const removeClient = (albumId: number, caId: number) =>
   api.delete(`/albums/${albumId}/clients/${caId}`)
+
+export const resendInvite = (albumId: number, inviteId: number) =>
+  api.post(`/albums/${albumId}/invites/${inviteId}/resend`).then((r) => r.data)
+
+export const reorderPhotos = (albumId: number, fotoIds: number[]) =>
+  api.put(`/albums/${albumId}/photos/reorder`, { foto_ids: fotoIds })
+
+export const listPhotos = (albumId: number, offset: number) =>
+  api.get<{ fotos: Foto[], total: number, offset: number }>(`/albums/${albumId}/photos?offset=${offset}`).then((r) => r.data)
+
+export const searchAlbums = (search: string) =>
+  api.get<Album[]>(`/albums?search=${encodeURIComponent(search)}`).then((r) => r.data)
+
+export const listPublicPhotographers = () =>
+  api.get<FotografoPublico[]>('/public/photographers').then((r) => r.data)
+
+export const getPublicPhotographer = (id: number) =>
+  api.get<FotografoPublicoResponse>(`/public/photographers/${id}`).then((r) => r.data)

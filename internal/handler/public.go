@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/FelippeRibeiro/go-gallery/internal/db"
@@ -67,5 +68,50 @@ func GetPublicAlbum(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"album": album,
 		"fotos": fotosPublicas,
+	})
+}
+
+// GET /api/public/photographers
+func ListPublicPhotographers(w http.ResponseWriter, r *http.Request) {
+	fotografos, err := db.GetQueries().ListarFotografosComAlbumPublico(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao listar fotógrafos")
+		return
+	}
+	if fotografos == nil {
+		fotografos = []db.FotografoPublico{}
+	}
+	writeJSON(w, http.StatusOK, fotografos)
+}
+
+// GET /api/public/photographers/{id}
+func GetPublicPhotographer(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	fotografoID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+
+	queries := db.GetQueries()
+	fotografo, err := queries.ObterFotografoPorID(r.Context(), fotografoID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "fotógrafo não encontrado")
+		return
+	}
+
+	albums, _ := queries.ListarAlbunsPublicosPorFotografo(r.Context(), fotografoID)
+	if albums == nil {
+		albums = []db.Albun{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"fotografo": map[string]any{
+			"id":          fotografo.ID,
+			"nome":        fotografo.Nome,
+			"foto_perfil": fotografo.FotoPerfil,
+			"bio":         fotografo.Bio,
+		},
+		"albums": albums,
 	})
 }

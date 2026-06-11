@@ -144,7 +144,7 @@ func (q *Queries) AtualizarCapaAlbum(ctx context.Context, id int64, capaURL stri
 const criarFotografia = `
 INSERT INTO fotografias (url_alta, url_baixa, descricao, id_fotografo, id_album, valor_unitario)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, url_alta, url_baixa, descricao, id_fotografo, id_album, valor_unitario, ativo, criado_em
+RETURNING id, url_alta, url_baixa, descricao, id_fotografo, id_album, valor_unitario, ativo, criado_em, ordem
 `
 
 type CriarFotografiaParams struct {
@@ -162,12 +162,12 @@ func (q *Queries) CriarFotografia(ctx context.Context, arg CriarFotografiaParams
 	)
 	var i Fotografia
 	err := row.Scan(&i.ID, &i.UrlAlta, &i.UrlBaixa, &i.Descricao,
-		&i.IDFotografo, &i.IDAlbum, &i.ValorUnitario, &i.Ativo, &i.CriadoEm)
+		&i.IDFotografo, &i.IDAlbum, &i.ValorUnitario, &i.Ativo, &i.CriadoEm, &i.Ordem)
 	return i, err
 }
 
 const obterFotografiaPorID = `
-SELECT id, url_alta, url_baixa, descricao, id_fotografo, id_album, valor_unitario, ativo, criado_em
+SELECT id, url_alta, url_baixa, descricao, id_fotografo, id_album, valor_unitario, ativo, criado_em, ordem
 FROM fotografias WHERE id = $1
 `
 
@@ -175,13 +175,13 @@ func (q *Queries) ObterFotografiaPorID(ctx context.Context, id int64) (Fotografi
 	row := q.db.QueryRowContext(ctx, obterFotografiaPorID, id)
 	var i Fotografia
 	err := row.Scan(&i.ID, &i.UrlAlta, &i.UrlBaixa, &i.Descricao,
-		&i.IDFotografo, &i.IDAlbum, &i.ValorUnitario, &i.Ativo, &i.CriadoEm)
+		&i.IDFotografo, &i.IDAlbum, &i.ValorUnitario, &i.Ativo, &i.CriadoEm, &i.Ordem)
 	return i, err
 }
 
 const listarFotografiasPorAlbum = `
-SELECT id, url_alta, url_baixa, descricao, id_fotografo, id_album, valor_unitario, ativo, criado_em
-FROM fotografias WHERE id_album = $1 AND ativo = TRUE ORDER BY criado_em DESC
+SELECT id, url_alta, url_baixa, descricao, id_fotografo, id_album, valor_unitario, ativo, criado_em, ordem
+FROM fotografias WHERE id_album = $1 AND ativo = TRUE ORDER BY ordem ASC, id ASC
 `
 
 func (q *Queries) ListarFotografiasPorAlbum(ctx context.Context, idAlbum int64) ([]Fotografia, error) {
@@ -194,7 +194,65 @@ func (q *Queries) ListarFotografiasPorAlbum(ctx context.Context, idAlbum int64) 
 	for rows.Next() {
 		var i Fotografia
 		if err := rows.Scan(&i.ID, &i.UrlAlta, &i.UrlBaixa, &i.Descricao,
-			&i.IDFotografo, &i.IDAlbum, &i.ValorUnitario, &i.Ativo, &i.CriadoEm); err != nil {
+			&i.IDFotografo, &i.IDAlbum, &i.ValorUnitario, &i.Ativo, &i.CriadoEm, &i.Ordem); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+const listarFotografiasPorAlbumPaginado = `
+SELECT id, url_alta, url_baixa, descricao, id_fotografo, id_album, valor_unitario, ativo, criado_em, ordem
+FROM fotografias WHERE id_album = $1 AND ativo = TRUE ORDER BY ordem ASC, id ASC
+LIMIT $2 OFFSET $3
+`
+
+func (q *Queries) ListarFotografiasPorAlbumPaginado(ctx context.Context, idAlbum int64, limit, offset int64) ([]Fotografia, error) {
+	rows, err := q.db.QueryContext(ctx, listarFotografiasPorAlbumPaginado, idAlbum, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Fotografia
+	for rows.Next() {
+		var i Fotografia
+		if err := rows.Scan(&i.ID, &i.UrlAlta, &i.UrlBaixa, &i.Descricao,
+			&i.IDFotografo, &i.IDAlbum, &i.ValorUnitario, &i.Ativo, &i.CriadoEm, &i.Ordem); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+const atualizarOrdemFotografia = `UPDATE fotografias SET ordem = $3 WHERE id = $1 AND id_album = $2`
+
+func (q *Queries) AtualizarOrdemFotografia(ctx context.Context, id, albumID, ordem int64) error {
+	_, err := q.db.ExecContext(ctx, atualizarOrdemFotografia, id, albumID, ordem)
+	return err
+}
+
+const contarFotografiasPorAlbum = `SELECT COUNT(*) FROM fotografias WHERE id_album = $1 AND ativo = TRUE`
+
+func (q *Queries) ContarFotografiasPorAlbum(ctx context.Context, albumID int64) (int64, error) {
+	var n int64
+	err := q.db.QueryRowContext(ctx, contarFotografiasPorAlbum, albumID).Scan(&n)
+	return n, err
+}
+
+const listarAlbunsPublicosPorFotografo = `SELECT ` + albumCols + ` FROM albuns WHERE publico = TRUE AND ativo = TRUE AND id_fotografo = $1 ORDER BY criado_em DESC`
+
+func (q *Queries) ListarAlbunsPublicosPorFotografo(ctx context.Context, idFotografo int64) ([]Albun, error) {
+	rows, err := q.db.QueryContext(ctx, listarAlbunsPublicosPorFotografo, idFotografo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Albun
+	for rows.Next() {
+		var i Albun
+		if err := scanAlbun(rows, &i); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

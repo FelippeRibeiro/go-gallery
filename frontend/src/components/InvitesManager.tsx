@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Clock, Users, Camera, Trash2, Loader2, UserPlus, Mail } from 'lucide-react'
-import { listInvites, revokeInvite, invitePhotographer, removePhotographer, removeClient } from '@/api/albums'
+import { Clock, Users, Camera, Trash2, Loader2, UserPlus, Mail, RefreshCw } from 'lucide-react'
+import { listInvites, revokeInvite, resendInvite, invitePhotographer, removePhotographer, removeClient } from '@/api/albums'
 import type { Convite, Colaborador, Cliente } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -62,6 +62,15 @@ export default function InvitesManager({ albumId, open, onOpenChange }: Props) {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erro ao revogar convite'
       toast.error(msg)
+    }
+  }
+
+  const handleResend = async (c: Convite) => {
+    try {
+      await resendInvite(albumId, c.ID)
+      toast.success(`Email reenviado para ${c.Email}`)
+    } catch {
+      toast.error('Erro ao reenviar convite')
     }
   }
 
@@ -204,6 +213,15 @@ export default function InvitesManager({ albumId, open, onOpenChange }: Props) {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <Badge variant="outline" className="text-xs">Pendente</Badge>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleResend(c)}
+                            title="Reenviar email"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             size="icon"
                             variant="ghost"

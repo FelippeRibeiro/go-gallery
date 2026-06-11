@@ -70,6 +70,7 @@ export interface Foto {
   ValorUnitario: string
   Ativo: boolean
   CriadoEm: string
+  Ordem: number
 }
 
 export interface AlbumComFotos {
@@ -80,4 +81,63 @@ export interface AlbumComFotos {
 export interface AuthResponse {
   token: string
   user: User
+}
+
+export interface Pedido {
+  ID: number
+  IDCliente: number
+  IDAlbum: number
+  Status: string
+  ValorTotal: string
+  CriadoEm: string
+}
+
+export interface PedidoFotoInfo {
+  ID: number
+  IDPedido: number
+  IDFotografia: number
+  ValorUnitario: string
+  UrlAlta: string
+  UrlBaixa: string
+}
+
+export interface DownloadLink {
+  foto_id: number
+  url_baixa: string
+  url_download: string
+}
+
+export interface FotosPage {
+  fotos: Foto[] | FotoPublica[]
+  total: number
+  offset: number
+}
+
+export interface Fotografo {
+  id: number
+  nome: string
+  foto_perfil: { String: string; Valid: boolean } | null
+  bio: { String: string; Valid: boolean } | null
+}
+
+export interface FotografoPublicoResponse {
+  fotografo: Fotografo
+  albums: Album[]
+}
+
+export interface FotografoPublico {
+  ID: number
+  Nome: string
+  FotoPerfil: { String: string; Valid: boolean }
+  Bio: { String: string; Valid: boolean }
+  TotalAlbuns: number
+}
+
+export interface Perfil {
+  id: number
+  nome: string
+  email: string
+  tipo: string
+  foto_perfil: { String: string; Valid: boolean } | null
+  bio: { String: string; Valid: boolean } | null
 }

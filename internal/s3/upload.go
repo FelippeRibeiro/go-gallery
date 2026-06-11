@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -89,6 +90,19 @@ func KeyFromURL(url string) string {
 	return strings.TrimPrefix(url, prefix)
 }
 
+// PresignGetObject generates a pre-signed GET URL for a private S3 object.
+func PresignGetObject(ctx context.Context, key string, expires time.Duration) (string, error) {
+	presignClient := s3.NewPresignClient(ObterS3Client())
+	req, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(BucketName),
+		Key:    aws.String(key),
+	}, s3.WithPresignExpires(expires))
+	if err != nil {
+		return "", err
+	}
+	return req.URL, nil
+}
+
 // EnsurePublicReadPolicy sets a bucket policy allowing public GET on preview and cover files.
 func EnsurePublicReadPolicy(ctx context.Context) error {
 	policy := `{
@@ -99,7 +113,8 @@ func EnsurePublicReadPolicy(ctx context.Context) error {
 			"Action": ["s3:GetObject"],
 			"Resource": [
 				"arn:aws:s3:::go-gallery/albums/*/preview-*.jpg",
-				"arn:aws:s3:::go-gallery/albums/*/cover.jpg"
+				"arn:aws:s3:::go-gallery/albums/*/cover.jpg",
+				"arn:aws:s3:::go-gallery/profiles/*/avatar.jpg"
 			]
 		}]
 	}`

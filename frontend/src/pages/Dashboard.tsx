@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Calendar, FolderOpen, Globe, Images, Lock, PlusCircle } from 'lucide-react'
+import { Calendar, FolderOpen, Globe, Images, Lock, PlusCircle, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import Layout from '@/components/Layout'
 import { listAlbums } from '@/api/albums'
 import { useAuth } from '@/context/AuthContext'
 import type { Album } from '@/types'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -92,6 +93,7 @@ export default function Dashboard() {
   const isClient = user?.tipo === 'cliente'
   const [albums, setAlbums] = useState<Album[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     listAlbums()
@@ -100,6 +102,10 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
+  const filtered = albums.filter((a) =>
+    a.Titulo.toLowerCase().includes(search.toLowerCase())
+  )
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -107,7 +113,11 @@ export default function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold">{isClient ? 'Meus álbuns' : 'Meus Álbuns'}</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {loading ? '…' : `${albums.length} álbum${albums.length !== 1 ? 's' : ''}`}
+              {loading
+                ? '…'
+                : search
+                  ? `${filtered.length} de ${albums.length} álbum${albums.length !== 1 ? 's' : ''}`
+                  : `${albums.length} álbum${albums.length !== 1 ? 's' : ''}`}
             </p>
           </div>
           {!isClient && (
@@ -118,6 +128,16 @@ export default function Dashboard() {
               </Link>
             </Button>
           )}
+        </div>
+
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Buscar álbuns…"
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
         {loading && <DashboardSkeleton />}
@@ -148,9 +168,18 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {!loading && albums.length > 0 && (
+        {!loading && albums.length > 0 && filtered.length === 0 && (
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+              <FolderOpen className="h-8 w-8 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">Nenhum álbum encontrado para &quot;{search}&quot;</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!loading && filtered.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {albums.map((album) => (
+            {filtered.map((album) => (
               <AlbumCard key={album.ID} album={album} />
             ))}
           </div>

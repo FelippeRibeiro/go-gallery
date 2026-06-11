@@ -32,6 +32,31 @@ func Resize(img image.Image, maxWidth int) image.Image {
 	return dst
 }
 
+func ResizeSquare(img image.Image, size int) image.Image {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	side := w
+	if h < w {
+		side = h
+	}
+	x0 := (w - side) / 2
+	y0 := (h - side) / 2
+	cropped := image.NewRGBA(image.Rect(0, 0, side, side))
+	draw.Draw(cropped, cropped.Bounds(), img, image.Point{X: x0 + b.Min.X, Y: y0 + b.Min.Y}, draw.Src)
+	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+	draw.ApproxBiLinear.Scale(dst, dst.Bounds(), cropped, cropped.Bounds(), draw.Over, nil)
+	return dst
+}
+
+func GenerateAvatar(img image.Image) ([]byte, error) {
+	square := ResizeSquare(img, 300)
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, square, &jpeg.Options{Quality: 80}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 func GeneratePreview(img image.Image) ([]byte, error) {
 	resized := Resize(img, PreviewMaxWidth)
 	watermarked := ApplyWatermark(resized, PreviewWatermarkText)

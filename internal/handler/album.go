@@ -12,12 +12,13 @@ import (
 	"strconv"
 	"time"
 
+	"strings"
+
 	"github.com/FelippeRibeiro/go-gallery/internal/db"
 	"github.com/FelippeRibeiro/go-gallery/internal/email"
 	imgproc "github.com/FelippeRibeiro/go-gallery/internal/image"
 	"github.com/FelippeRibeiro/go-gallery/internal/middleware"
 	s3client "github.com/FelippeRibeiro/go-gallery/internal/s3"
-	"github.com/FelippeRibeiro/go-gallery/internal/ws"
 	"github.com/google/uuid"
 )
 
@@ -50,6 +51,18 @@ func ListAlbums(w http.ResponseWriter, r *http.Request) {
 	if albums == nil {
 		albums = []db.Albun{}
 	}
+
+	search := strings.ToLower(r.URL.Query().Get("search"))
+	if search != "" {
+		filtered := albums[:0]
+		for _, a := range albums {
+			if strings.Contains(strings.ToLower(a.Titulo), search) {
+				filtered = append(filtered, a)
+			}
+		}
+		albums = filtered
+	}
+
 	writeJSON(w, http.StatusOK, albums)
 }
 
@@ -513,16 +526,6 @@ func UploadPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notifica em tempo real via WebSocket
-	ws.GetHub().Broadcast(albumID, ws.Event{
-		Type: "new_photo",
-		Data: map[string]any{
-			"id":        foto.ID,
-			"url_baixa": foto.UrlBaixa,
-			"criado_em": foto.CriadoEm,
-		},
-	})
-
 	writeJSON(w, http.StatusCreated, foto)
 }
 
@@ -620,6 +623,148 @@ func UploadCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, album)
+}
+
+// POST /api/albums/{id}/invites/{inviteId}/resend — somente dono
+func ResendInvite(w http.ResponseWriter, r *http.Request) {
+	albumID, err := parseAlbumID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	inviteID, err := strconv.ParseInt(r.PathValue("inviteId"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	userID := r.Context().Value(middleware.UserIDKey).(int64)
+
+	queries := db.GetQueries()
+	album, err := albumDoFotografo(r, albumID, userID)
+	if err != nil {
+		respondAlbumErr(w, err)
+		return
+	}
+
+	convites, err := queries.ListarConvitesPorAlbum(r.Context(), albumID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao buscar convites")
+		return
+	}
+
+	var convite *db.Convite
+	for i, c := range convites {
+		if c.ID == inviteID {
+			convite = &convites[i]
+			break
+		}
+	}
+	if convite == nil || convite.UsedAt.Valid {
+		writeError(w, http.StatusNotFound, "convite não encontrado ou já utilizado")
+		return
+	}
+
+	capaURL := ""
+	if album.CapaUrl.Valid {
+		capaURL = album.CapaUrl.String
+	}
+	go func() {
+		if err := email.EnviarConviteAlbum(convite.Email, album.Titulo, convite.Token, capaURL); err != nil {
+			fmt.Printf("[WARN] falha ao reenviar email para %s: %v\n", convite.Email, err)
+		}
+	}()
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "enviado"})
+}
+
+// PUT /api/albums/{id}/photos/reorder — dono OU colaborador fotógrafo
+func ReorderPhotos(w http.ResponseWriter, r *http.Request) {
+	albumID, err := parseAlbumID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	userID := r.Context().Value(middleware.UserIDKey).(int64)
+
+	queries := db.GetQueries()
+	album, err := queries.ObterAlbumPorID(r.Context(), albumID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "álbum não encontrado")
+		return
+	}
+	if album.IDFotografo != userID {
+		isCollab, _ := queries.VerificarFotografoAlbum(r.Context(), userID, albumID)
+		if !isCollab {
+			writeError(w, http.StatusForbidden, "acesso negado")
+			return
+		}
+	}
+
+	var req struct {
+		FotoIDs []int64 `json:"foto_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "corpo inválido")
+		return
+	}
+
+	for i, id := range req.FotoIDs {
+		_ = queries.AtualizarOrdemFotografia(r.Context(), id, albumID, int64(i+1))
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GET /api/albums/{id}/photos — paginado
+func ListPhotos(w http.ResponseWriter, r *http.Request) {
+	albumID, err := parseAlbumID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	userID := r.Context().Value(middleware.UserIDKey).(int64)
+	tipo, _ := r.Context().Value(middleware.UserTipoKey).(string)
+
+	queries := db.GetQueries()
+	album, err := queries.ObterAlbumPorID(r.Context(), albumID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "álbum não encontrado")
+		return
+	}
+
+	if tipo == "cliente" {
+		hasAccess, _ := queries.VerificarAcessoClienteAlbum(r.Context(), userID, albumID)
+		if !hasAccess {
+			writeError(w, http.StatusForbidden, "acesso negado")
+			return
+		}
+	} else if album.IDFotografo != userID {
+		isCollab, _ := queries.VerificarFotografoAlbum(r.Context(), userID, albumID)
+		if !isCollab {
+			writeError(w, http.StatusForbidden, "acesso negado")
+			return
+		}
+	}
+
+	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
+	const pageSize = 50
+
+	fotos, err := queries.ListarFotografiasPorAlbumPaginado(r.Context(), albumID, pageSize, offset)
+	if err != nil || fotos == nil {
+		fotos = []db.Fotografia{}
+	}
+	total, _ := queries.ContarFotografiasPorAlbum(r.Context(), albumID)
+
+	if tipo == "cliente" {
+		fotosCliente := make([]fotoPublicaDTO, len(fotos))
+		for i, f := range fotos {
+			fotosCliente[i] = fotoPublicaDTO{ID: f.ID, UrlBaixa: f.UrlBaixa, CriadoEm: f.CriadoEm}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"fotos": fotosCliente, "total": total, "offset": offset})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"fotos": fotos, "total": total, "offset": offset})
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

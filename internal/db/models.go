@@ -37,6 +37,7 @@ type Fotografia struct {
 	ValorUnitario string
 	Ativo         bool
 	CriadoEm      time.Time
+	Ordem         int
 }
 
 type FotografosAlbun struct {
@@ -47,13 +48,23 @@ type FotografosAlbun struct {
 }
 
 type Usuario struct {
-	ID        int64
-	Nome      string
-	Email     string
-	SenhaHash sql.NullString
-	Ativo     bool
-	CriadoEm  time.Time
-	Tipo      interface{}
+	ID         int64
+	Nome       string
+	Email      string
+	SenhaHash  sql.NullString
+	Ativo      bool
+	CriadoEm   time.Time
+	Tipo       interface{}
+	FotoPerfil sql.NullString
+	Bio        sql.NullString
+}
+
+type FotografoPublico struct {
+	ID          int64
+	Nome        string
+	FotoPerfil  sql.NullString
+	Bio         sql.NullString
+	TotalAlbuns int64
 }
 
 type Convite struct {

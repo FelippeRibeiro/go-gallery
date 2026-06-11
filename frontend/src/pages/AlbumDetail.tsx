@@ -1,10 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Calendar, DollarSign, Globe, ImagePlus, Images,
-  Lock, Mail, ShoppingCart, Users, X,
+  Loader2, Lock, Mail, ShoppingCart, Users, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import Layout from '@/components/Layout'
 import PhotoGrid from '@/components/PhotoGrid'
 import PhotoUpload from '@/components/PhotoUpload'
@@ -12,8 +27,8 @@ import InviteModal from '@/components/InviteModal'
 import InvitesManager from '@/components/InvitesManager'
 import Lightbox from '@/components/Lightbox'
 import { useAuth } from '@/context/AuthContext'
-import { useAlbumSocket } from '@/hooks/useAlbumSocket'
-import { getAlbum, updateVisibility, deletePhoto, uploadCover } from '@/api/albums'
+import { getAlbum, updateVisibility, deletePhoto, uploadCover, listPhotos, reorderPhotos } from '@/api/albums'
+import { createOrder } from '@/api/orders'
 import type { Album, Foto, FotoPublica } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -45,9 +60,11 @@ function AlbumDetailSkeleton() {
 // ─── Client view ──────────────────────────────────────────────────────────────
 
 function ClientAlbumView({ album, fotos }: { album: Album; fotos: FotoPublica[] }) {
+  const navigate = useNavigate()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [ordering, setOrdering] = useState(false)
   const lightboxPhotos = fotos.map(f => ({ id: f.id, url: f.url_baixa }))
 
   const toggle = (id: number) =>
@@ -62,6 +79,21 @@ function ClientAlbumView({ album, fotos }: { album: Album; fotos: FotoPublica[] 
   const total = album.Lote
     ? Number(album.ValorAlbum)
     : selected.size * unitPrice
+
+  const handleFinalize = async () => {
+    setOrdering(true)
+    try {
+      const fotoIds = album.Lote ? [] : Array.from(selected)
+      const result = await createOrder(album.ID, fotoIds)
+      toast.success('Pedido criado com sucesso!')
+      navigate(`/orders/${result.pedido_id}`)
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erro ao criar pedido'
+      toast.error(msg)
+    } finally {
+      setOrdering(false)
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-24">
@@ -183,12 +215,35 @@ function ClientAlbumView({ album, fotos }: { album: Album; fotos: FotoPublica[] 
               <X className="h-4 w-4" />
               Limpar
             </Button>
-            <Button size="sm" onClick={() => toast.info('Funcionalidade de compra em breve!')}>
+            <Button size="sm" onClick={handleFinalize} disabled={ordering}>
+              {ordering && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Finalizar seleção
             </Button>
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Sortable photo item (for drag-and-drop reorder) ─────────────────────────
+
+function SortablePhotoItem({ foto }: { foto: Foto }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: foto.ID })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className="relative aspect-square rounded-lg overflow-hidden bg-muted cursor-grab active:cursor-grabbing"
+    >
+      <img src={foto.UrlBaixa} alt="" className="w-full h-full object-cover pointer-events-none" loading="lazy" />
     </div>
   )
 }
@@ -205,17 +260,37 @@ function PhotographerAlbumView({ album: initialAlbum, fotos: initialFotos }: { a
   const [fotos, setFotos] = useState(initialFotos)
   const [visibilityLoading, setVisibilityLoading] = useState(false)
   const [coverUploading, setCoverUploading] = useState(false)
+  const [totalFotos, setTotalFotos] = useState(initialFotos.length)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [reorderMode, setReorderMode] = useState(false)
+  const [savingOrder, setSavingOrder] = useState(false)
 
   const isOwner = album.IDFotografo === user?.id
 
-  // Real-time new photo via WebSocket
-  useAlbumSocket(albumId, (newFoto) => {
+  const sensors = useSensors(useSensor(PointerSensor))
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
     setFotos((prev) => {
-      if (prev.some((f) => f.ID === newFoto.id)) return prev
-      const synthetic: Foto = { ID: newFoto.id, UrlBaixa: newFoto.url_baixa, UrlAlta: '', CriadoEm: newFoto.criado_em, IDFotografo: 0, IDAlbum: albumId, ValorUnitario: '', Ativo: true, Descricao: { String: '', Valid: false } }
-      return [synthetic, ...prev]
+      const oldIndex = prev.findIndex((f) => f.ID === active.id)
+      const newIndex = prev.findIndex((f) => f.ID === over.id)
+      return arrayMove(prev, oldIndex, newIndex)
     })
-  })
+  }
+
+  const handleSaveOrder = async () => {
+    setSavingOrder(true)
+    try {
+      await reorderPhotos(albumId, fotos.map((f) => f.ID))
+      setReorderMode(false)
+      toast.success('Ordem salva!')
+    } catch {
+      toast.error('Erro ao salvar ordem')
+    } finally {
+      setSavingOrder(false)
+    }
+  }
 
   const handleVisibilityToggle = async (publico: boolean) => {
     setVisibilityLoading(true)
@@ -249,6 +324,19 @@ function PhotographerAlbumView({ album: initialAlbum, fotos: initialFotos }: { a
     } finally {
       setCoverUploading(false)
       if (coverInputRef.current) coverInputRef.current.value = ''
+    }
+  }
+
+  const handleLoadMore = async () => {
+    setLoadingMore(true)
+    try {
+      const res = await listPhotos(albumId, fotos.length)
+      setFotos((prev) => [...prev, ...res.fotos as Foto[]])
+      setTotalFotos(res.total)
+    } catch {
+      toast.error('Erro ao carregar mais fotos')
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -369,10 +457,49 @@ function PhotographerAlbumView({ album: initialAlbum, fotos: initialFotos }: { a
 
       {/* Gallery */}
       <div className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          Galeria · {fotos.length} foto{fotos.length !== 1 ? 's' : ''}
-        </h2>
-        <PhotoGrid fotos={fotos} onDelete={handleDeletePhoto} />
+        {/* Reorder toggle */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Galeria · {fotos.length} foto{fotos.length !== 1 ? 's' : ''}
+            {totalFotos > fotos.length ? ` (${totalFotos} total)` : ''}
+          </h2>
+          {fotos.length > 1 && (
+            <div className="flex gap-2">
+              {reorderMode ? (
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setReorderMode(false)} disabled={savingOrder}>Cancelar</Button>
+                  <Button size="sm" onClick={handleSaveOrder} disabled={savingOrder}>
+                    {savingOrder ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+                    Salvar ordem
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" variant="ghost" onClick={() => setReorderMode(true)}>Reordenar</Button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {reorderMode ? (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={fotos.map((f) => f.ID)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {fotos.map((foto) => <SortablePhotoItem key={foto.ID} foto={foto} />)}
+              </div>
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <PhotoGrid fotos={fotos} onDelete={handleDeletePhoto} />
+        )}
+
+        {fotos.length < totalFotos && (
+          <div className="flex justify-center pt-2">
+            <Button variant="outline" size="sm" onClick={handleLoadMore} disabled={loadingMore}>
+              {loadingMore ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Carregar mais ({totalFotos - fotos.length} restantes)
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )
