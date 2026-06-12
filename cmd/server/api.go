@@ -44,17 +44,22 @@ func main() {
 		log.Fatalf("Erro ao garantir política de leitura pública: %v", err)
 	}
 
+	porta := os.Getenv("PORT")
+	if porta == "" {
+		porta = "8080"
+	}
+
 	// ReadHeaderTimeout protege contra slowloris; IdleTimeout recicla conexões
 	// keep-alive ociosas. Sem ReadTimeout/WriteTimeout globais de propósito:
 	// matariam uploads lentos e as conexões WebSocket.
 	srv := &http.Server{
-		Addr:              ":8080",
+		Addr:              ":" + porta,
 		Handler:           server.New(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	log.Println("Servidor iniciado em http://localhost:8080")
+	log.Printf("Servidor iniciado em http://localhost:%s", porta)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Erro ao iniciar servidor: %v", err)
 	}

@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - "8080:8080"
+      - "${PORT:-8080}:${PORT:-8080}"
     # .env fornece segredos (JWT_SECRET, SMTP_*, MP_*); os valores abaixo
     # sobrescrevem os endereços que dentro do container são diferentes do host
     env_file:
@@ -21,7 +21,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:${PORT:-8080}/health"]
       interval: 10s
       timeout: 5s
       retries: 5
