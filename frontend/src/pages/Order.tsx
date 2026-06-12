@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Package, Loader2, ExternalLink, QrCode, CreditCard, Copy, Check } from 'lucide-react'
-import { getOrder, getDownloadLinks, createCheckout, createPix } from '@/api/orders'
-import type { Pedido, PedidoFotoInfo, DownloadLink } from '@/types'
+import { ArrowLeft, Download, Package, Loader2, QrCode, CreditCard, Copy, Check } from 'lucide-react'
+import { getOrder, createCheckout, createPix } from '@/api/orders'
+import type { Pedido, PedidoFotoInfo } from '@/types'
 import type { Album } from '@/types'
 import Layout from '@/components/Layout'
 import { Button } from '@/components/ui/button'
@@ -19,9 +19,7 @@ export default function Order() {
   const [pedido, setPedido] = useState<Pedido | null>(null)
   const [album, setAlbum] = useState<Album | null>(null)
   const [fotos, setFotos] = useState<PedidoFotoInfo[]>([])
-  const [links, setLinks] = useState<DownloadLink[] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadingLinks, setLoadingLinks] = useState(false)
 
   // Pagamento
   const [payLoading, setPayLoading] = useState<'pix' | 'card' | null>(null)
@@ -63,18 +61,6 @@ export default function Order() {
       if (pollingRef.current) window.clearInterval(pollingRef.current)
     }
   }, [pix, pago, refreshOrder])
-
-  const handleDownloads = async () => {
-    setLoadingLinks(true)
-    try {
-      const res = await getDownloadLinks(orderId)
-      setLinks(res.downloads)
-    } catch {
-      toast.error('Erro ao gerar links de download')
-    } finally {
-      setLoadingLinks(false)
-    }
-  }
 
   const handlePix = async () => {
     setPayLoading('pix')
@@ -166,12 +152,18 @@ export default function Order() {
           </div>
 
           {pago ? (
+            /* Download direto pelo servidor: o navegador baixa o arquivo sem
+               abrir aba e sem expor o link do bucket. */
             <>
-              <Button className="w-full" onClick={handleDownloads} disabled={loadingLinks}>
-                {loadingLinks ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
-                {links ? 'Atualizar links' : 'Gerar links de download'}
+              <Button className="w-full" asChild>
+                <a href={`/api/orders/${orderId}/download`}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Baixar todas as fotos (.zip)
+                </a>
               </Button>
-              <p className="text-xs text-muted-foreground text-center">Links expiram em 24 horas após a geração</p>
+              <p className="text-xs text-muted-foreground text-center">
+                Ou clique em uma foto abaixo para baixá-la individualmente.
+              </p>
             </>
           ) : pix ? (
             /* QR Code do PIX embutido */
@@ -228,32 +220,34 @@ export default function Order() {
           )}
         </div>
 
-        {/* Download grid */}
-        {links && (
+        {/* Grade de download foto a foto — cada clique baixa o original
+            diretamente (Content-Disposition: attachment), sem abrir aba. */}
+        {pago && fotos.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Fotos para download ({links.length})
+              Fotos para download ({fotos.length})
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {links.map((l) => (
-                <div key={l.foto_id} className="group relative rounded-lg overflow-hidden border border-border">
+              {fotos.map((f) => (
+                <a
+                  key={f.IDFotografia}
+                  href={`/api/orders/${orderId}/download/${f.IDFotografia}`}
+                  download
+                  className="group relative block rounded-lg overflow-hidden border border-border"
+                >
                   <img
-                    src={l.url_baixa}
-                    alt={`Foto ${l.foto_id}`}
+                    src={f.UrlBaixa}
+                    alt={`Foto ${f.IDFotografia}`}
                     className="w-full aspect-square object-cover"
+                    loading="lazy"
                   />
-                  <a
-                    href={l.url_download}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                  >
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <div className="flex flex-col items-center gap-1 text-white">
-                      <ExternalLink className="h-5 w-5" />
+                      <Download className="h-5 w-5" />
                       <span className="text-xs font-medium">Baixar original</span>
                     </div>
-                  </a>
-                </div>
+                  </div>
+                </a>
               ))}
             </div>
           </div>

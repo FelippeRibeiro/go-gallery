@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -107,6 +108,25 @@ func KeyFromURL(value string) string {
 		return value[idx+len(marker):]
 	}
 	return value
+}
+
+// GetObject abre um objeto do S3 para streaming (originais privados baixados
+// através do backend). O chamador deve fechar o body.
+func GetObject(ctx context.Context, key string) (body io.ReadCloser, contentType string, contentLength int64, err error) {
+	out, err := ObterS3Client().GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(BucketName),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, "", 0, err
+	}
+	if out.ContentType != nil {
+		contentType = *out.ContentType
+	}
+	if out.ContentLength != nil {
+		contentLength = *out.ContentLength
+	}
+	return out.Body, contentType, contentLength, nil
 }
 
 // PresignGetObject generates a pre-signed GET URL for a private S3 object.

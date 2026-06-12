@@ -17,9 +17,13 @@ package payment
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -160,6 +164,94 @@ func GetPayment(ctx context.Context, paymentID string) (*Payment, error) {
 	return &p, nil
 }
 
+// FindPaymentByExternalReference busca o pagamento mais relevante associado a
+// um external_reference (id do pedido): prioriza um pagamento aprovado; na
+// ausência, devolve o mais recente. Retorna (nil, nil) quando não há nenhum.
+// Usado para reconciliar pedidos do Checkout Pro, em que o payment id só
+// chegaria pelo webhook.
+func FindPaymentByExternalReference(ctx context.Context, externalRef string) (*Payment, error) {
+	u := apiBase + paymentsPth + "/search?sort=date_created&criteria=desc&external_reference=" + url.QueryEscape(externalRef)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+accessToken())
+
+	res, err := httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 300 {
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(res.Body)
+		return nil, fmt.Errorf("mercadopago search falhou (%d): %s", res.StatusCode, buf.String())
+	}
+
+	var out struct {
+		Results []Payment `json:"results"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if len(out.Results) == 0 {
+		return nil, nil
+	}
+	for i := range out.Results {
+		if out.Results[i].Status == "approved" {
+			return &out.Results[i], nil
+		}
+	}
+	return &out.Results[0], nil
+}
+
+// ─── Assinatura do webhook ────────────────────────────────────────────────────
+
+// VerifyWebhookSignature valida o header x-signature das notificações do
+// Mercado Pago (HMAC-SHA256 do manifesto "id:...;request-id:...;ts:...;" com a
+// chave secreta do webhook). Validação opt-in: sem MP_WEBHOOK_SECRET
+// configurado, retorna sempre true.
+func VerifyWebhookSignature(xSignature, xRequestID, dataID string) bool {
+	secret := os.Getenv("MP_WEBHOOK_SECRET")
+	if secret == "" {
+		return true
+	}
+
+	var ts, v1 string
+	for _, part := range strings.Split(xSignature, ",") {
+		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(k) {
+		case "ts":
+			ts = strings.TrimSpace(v)
+		case "v1":
+			v1 = strings.TrimSpace(v)
+		}
+	}
+	if ts == "" || v1 == "" {
+		return false
+	}
+
+	// Manifesto conforme a documentação do MP; segmentos com valor ausente são
+	// omitidos. O data.id alfanumérico entra em minúsculas.
+	manifest := ""
+	if dataID != "" {
+		manifest += "id:" + strings.ToLower(dataID) + ";"
+	}
+	if xRequestID != "" {
+		manifest += "request-id:" + xRequestID + ";"
+	}
+	manifest += "ts:" + ts + ";"
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(manifest))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(v1))
+}
+
 // ─── Pagamento PIX (checkout transparente) ───────────────────────────────────
 
 type PixPayer struct {
@@ -212,7 +304,6 @@ func CreatePixPayment(ctx context.Context, req PixRequest) (*PixResponse, error)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("acessToken", accessToken())
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+accessToken())
 	// Chave de idempotência evita pagamentos duplicados em retries.

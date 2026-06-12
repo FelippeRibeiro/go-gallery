@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/FelippeRibeiro/go-gallery/internal/db"
@@ -61,21 +60,9 @@ func UpdateProfile(w http.ResponseWriter, r *http.Request) {
 func UploadProfilePhoto(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(middleware.UserIDKey).(int64)
 
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "multipart inválido")
-		return
-	}
-
-	file, _, err := r.FormFile("file")
+	// Mesmo pipeline dos demais uploads: limite de 10 MB + allowlist de tipos.
+	data, _, _, err := readImageForm(w, r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "arquivo ausente")
-		return
-	}
-	defer file.Close()
-
-	data, err := io.ReadAll(file)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao ler arquivo")
 		return
 	}
 

@@ -185,6 +185,25 @@ func (q *Queries) atualizarPreferenciaPedido(ctx context.Context, arg atualizarP
 	return err
 }
 
+const clienteComprouAlbum = `-- name: clienteComprouAlbum :one
+SELECT EXISTS(
+  SELECT 1 FROM pedidos
+  WHERE id_cliente = $1 AND id_album = $2 AND status = 'pago'
+)
+`
+
+type clienteComprouAlbumParams struct {
+	IDCliente int64
+	IDAlbum   int64
+}
+
+func (q *Queries) clienteComprouAlbum(ctx context.Context, arg clienteComprouAlbumParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, clienteComprouAlbum, arg.IDCliente, arg.IDAlbum)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const criarPedido = `-- name: criarPedido :one
 INSERT INTO pedidos (id_cliente, id_album, status, valor_total)
 VALUES ($1, $2, 'pendente', $3)

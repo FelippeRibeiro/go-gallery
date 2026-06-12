@@ -59,7 +59,7 @@ function AlbumDetailSkeleton() {
 
 // ─── Client view ──────────────────────────────────────────────────────────────
 
-function ClientAlbumView({ album, fotos: allFotos, compradas, authenticated }: { album: Album; fotos: FotoPublica[]; compradas: number[]; authenticated: boolean }) {
+function ClientAlbumView({ album, fotos: allFotos, compradas, comprado, authenticated }: { album: Album; fotos: FotoPublica[]; compradas: number[]; comprado: boolean; authenticated: boolean }) {
   const navigate = useNavigate()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
@@ -169,8 +169,24 @@ function ClientAlbumView({ album, fotos: allFotos, compradas, authenticated }: {
         </p>
       )}
 
+      {/* Venda completa (lote) já comprada: novas fotos entram automaticamente
+          no pedido pago — nada de marcação "comprada" nem recompra. */}
+      {authenticated && album.Lote && comprado && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-emerald-700/50 bg-emerald-950/30 p-4">
+          <div>
+            <p className="text-sm font-medium">Você já comprou este álbum</p>
+            <p className="text-xs text-muted-foreground">
+              Todas as fotos — inclusive as adicionadas depois da compra — ficam disponíveis para download no seu pedido.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" asChild className="shrink-0">
+            <Link to="/orders">Meus pedidos</Link>
+          </Button>
+        </div>
+      )}
+
       {/* Compra de álbum completo (lote) — somente autenticado */}
-      {authenticated && fotos.length > 0 && album.Lote && (
+      {authenticated && fotos.length > 0 && album.Lote && !comprado && (
         <div className="flex items-center justify-between rounded-lg border border-border p-4">
           <div>
             <p className="text-sm font-medium">Álbum completo</p>
@@ -582,6 +598,7 @@ export default function AlbumDetail() {
   const [album, setAlbum] = useState<Album | null>(null)
   const [fotos, setFotos] = useState<Foto[] | FotoPublica[]>([])
   const [compradas, setCompradas] = useState<number[]>([])
+  const [comprado, setComprado] = useState(false)
   const [mode, setMode] = useState<ViewMode>('view')
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -602,6 +619,7 @@ export default function AlbumDetail() {
           setAlbum(res.album)
           setFotos(res.fotos)
           setCompradas(res.compradas ?? [])
+          setComprado(res.comprado ?? false)
           setMode(res.papel === 'dono' || res.papel === 'colaborador' ? 'manage' : 'view')
           setLoading(false)
           return
@@ -645,7 +663,7 @@ export default function AlbumDetail() {
       {mode === 'manage' ? (
         <PhotographerAlbumView album={album} fotos={fotos as Foto[]} />
       ) : (
-        <ClientAlbumView album={album} fotos={fotos as FotoPublica[]} compradas={compradas} authenticated={isAuthenticated} />
+        <ClientAlbumView album={album} fotos={fotos as FotoPublica[]} compradas={compradas} comprado={comprado} authenticated={isAuthenticated} />
       )}
     </PublicOrAppLayout>
   )

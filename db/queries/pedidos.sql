@@ -17,6 +17,12 @@ FROM pedidos_fotos pf
 INNER JOIN pedidos p ON p.id = pf.id_pedido
 WHERE p.id_cliente = $1 AND p.id_album = $2 AND p.status = 'pago';
 
+-- name: clienteComprouAlbum :one
+SELECT EXISTS(
+  SELECT 1 FROM pedidos
+  WHERE id_cliente = $1 AND id_album = $2 AND status = 'pago'
+);
+
 -- name: atualizarPreferenciaPedido :exec
 UPDATE pedidos SET mp_preference_id = $2 WHERE id = $1;
 

@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -12,7 +15,28 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	// Aceita apenas conexões da própria origem ou do frontend configurado
+	// (APP_URL). Requisições sem Origin (clientes não-browser) passam — a
+	// autenticação por cookie/JWT continua obrigatória no handler.
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		if strings.EqualFold(u.Host, r.Host) {
+			return true
+		}
+		if app := os.Getenv("APP_URL"); app != "" {
+			if au, err := url.Parse(app); err == nil && strings.EqualFold(u.Host, au.Host) {
+				return true
+			}
+		}
+		return false
+	},
 }
 
 type Event struct {

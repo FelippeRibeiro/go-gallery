@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"archive/zip"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +59,16 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Dono e colaboradores não compram o próprio álbum.
+	if album.IDFotografo == userID {
+		writeError(w, http.StatusForbidden, "você não pode comprar o seu próprio álbum")
+		return
+	}
+	if isCollab, _ := queries.VerificarFotografoAlbum(r.Context(), userID, albumID); isCollab {
+		writeError(w, http.StatusForbidden, "colaboradores não podem comprar fotos do álbum em que trabalham")
+		return
+	}
+
 	// Verify client has access
 	hasAccess, _ := queries.VerificarAcessoClienteAlbum(r.Context(), userID, albumID)
 	if !hasAccess && !album.Publico {
@@ -73,6 +87,13 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 	// For lote albums, get all photos; for per-photo, use selection
 	var fotosParaPedido []db.Fotografia
 	if album.Lote {
+		// Venda completa: comprou uma vez, é dono do álbum inteiro — inclusive
+		// das fotos adicionadas depois. Não existe recompra.
+		comprou, _ := queries.ClienteComprouAlbum(r.Context(), userID, albumID)
+		if comprou {
+			writeError(w, http.StatusConflict, "você já comprou este álbum — todas as fotos estão disponíveis nos seus pedidos")
+			return
+		}
 		fotosParaPedido, _ = queries.ListarFotografiasPorAlbum(r.Context(), albumID)
 	} else {
 		if len(req.FotoIDs) == 0 {
@@ -93,25 +114,28 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validação anti-duplicidade: remove fotos que o cliente já comprou
-	// (pedido com status 'pago') neste álbum. Rede de segurança — o frontend
-	// já oculta essas fotos, mas o pedido também é validado aqui.
-	compradas, _ := queries.ListarFotoIDsCompradas(r.Context(), userID, albumID)
-	if len(compradas) > 0 {
-		jaComprada := make(map[int64]bool, len(compradas))
-		for _, id := range compradas {
-			jaComprada[id] = true
-		}
-		filtradas := fotosParaPedido[:0]
-		for _, f := range fotosParaPedido {
-			if !jaComprada[f.ID] {
-				filtradas = append(filtradas, f)
+	// Validação anti-duplicidade (somente venda por foto): remove fotos que o
+	// cliente já comprou (pedido com status 'pago') neste álbum. Rede de
+	// segurança — o frontend já bloqueia essas fotos, mas o pedido também é
+	// validado aqui.
+	if !album.Lote {
+		compradas, _ := queries.ListarFotoIDsCompradas(r.Context(), userID, albumID)
+		if len(compradas) > 0 {
+			jaComprada := make(map[int64]bool, len(compradas))
+			for _, id := range compradas {
+				jaComprada[id] = true
 			}
-		}
-		fotosParaPedido = filtradas
-		if len(fotosParaPedido) == 0 {
-			writeError(w, http.StatusConflict, "você já comprou essas fotos")
-			return
+			filtradas := fotosParaPedido[:0]
+			for _, f := range fotosParaPedido {
+				if !jaComprada[f.ID] {
+					filtradas = append(filtradas, f)
+				}
+			}
+			fotosParaPedido = filtradas
+			if len(fotosParaPedido) == 0 {
+				writeError(w, http.StatusConflict, "você já comprou essas fotos")
+				return
+			}
 		}
 	}
 
@@ -130,7 +154,17 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		valorTotal = fmt.Sprintf("%.2f", soma)
 	}
 
-	pedido, err := queries.CriarPedido(r.Context(), userID, albumID, valorTotal)
+	// Pedido + itens em transação: o total cobrado nunca fica sem os itens
+	// correspondentes (e vice-versa).
+	tx, err := db.GetDB().BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao criar pedido")
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	qtx := queries.WithTx(tx)
+	pedido, err := qtx.CriarPedido(r.Context(), userID, albumID, valorTotal)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao criar pedido")
 		return
@@ -141,7 +175,15 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		if album.Lote {
 			v = "0.00"
 		}
-		_ = queries.CriarPedidoFoto(r.Context(), pedido.ID, f.ID, v)
+		if err := qtx.CriarPedidoFoto(r.Context(), pedido.ID, f.ID, v); err != nil {
+			writeError(w, http.StatusInternalServerError, "erro ao criar pedido")
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao criar pedido")
+		return
 	}
 
 	// Email de pedido criado (aguardando pagamento) — async.
@@ -186,6 +228,9 @@ func carregarPedidoDoCliente(w http.ResponseWriter, r *http.Request) (*db.Pedido
 		writeError(w, http.StatusForbidden, "acesso negado")
 		return nil, false
 	}
+	// Sincroniza com o MP antes de aceitar um novo pagamento: se o pedido já
+	// foi pago e o webhook ainda não chegou, evita uma cobrança duplicada.
+	reconciliarPagamento(r.Context(), &pedido)
 	if pedido.Status == "pago" {
 		writeError(w, http.StatusConflict, "pedido já foi pago")
 		return nil, false
@@ -301,6 +346,103 @@ func ListMyOrders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"pedidos": pedidos})
 }
 
+// fotosDoPedido devolve as fotos cobertas pelo pedido. Em álbuns de venda
+// completa (lote) o cliente comprou o álbum inteiro: fotos adicionadas depois
+// da compra também entram, unindo as fotos ativas do álbum aos itens do pedido
+// (os itens preservam fotos desativadas que já foram compradas). Em venda por
+// foto, são exatamente os itens do pedido.
+func fotosDoPedido(ctx context.Context, pedido *db.Pedido) ([]db.PedidoFotoInfo, error) {
+	queries := db.GetQueries()
+	itens, err := queries.ListarFotosPedido(ctx, pedido.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	album, err := queries.ObterAlbumPorID(ctx, pedido.IDAlbum)
+	if err != nil || !album.Lote {
+		return itens, nil
+	}
+
+	fotosAtuais, err := queries.ListarFotografiasPorAlbum(ctx, pedido.IDAlbum)
+	if err != nil {
+		return itens, nil
+	}
+	noPedido := make(map[int64]bool, len(itens))
+	for _, it := range itens {
+		noPedido[it.IDFotografia] = true
+	}
+	for _, f := range fotosAtuais {
+		if noPedido[f.ID] {
+			continue
+		}
+		itens = append(itens, db.PedidoFotoInfo{
+			IDPedido:      pedido.ID,
+			IDFotografia:  f.ID,
+			ValorUnitario: "0.00",
+			UrlAlta:       f.UrlAlta,
+			UrlBaixa:      f.UrlBaixa,
+		})
+	}
+	return itens, nil
+}
+
+// aplicarStatusPagamento grava o novo status do pedido e o id do pagamento,
+// sem nunca rebaixar um pedido já pago (uma notificação atrasada de um
+// pagamento cancelado não pode desfazer um pagamento confirmado). Na transição
+// para 'pago' envia o email de confirmação. Atualiza pedido.Status in place.
+func aplicarStatusPagamento(ctx context.Context, pedido *db.Pedido, novoStatus, paymentID string) {
+	if pedido.Status == "pago" {
+		return
+	}
+	queries := db.GetQueries()
+	if err := queries.RegistrarPagamentoPedido(ctx, pedido.ID, novoStatus, paymentID); err != nil {
+		fmt.Printf("[WARN] falha ao atualizar status do pedido %d: %v\n", pedido.ID, err)
+		return
+	}
+	transitouParaPago := novoStatus == "pago"
+	pedido.Status = novoStatus
+
+	if transitouParaPago {
+		// Comprador passa a ter vínculo com o álbum (idempotente) — o álbum
+		// aparece no dashboard dele como os de convite.
+		_, _ = queries.AssociarClienteAlbum(ctx, pedido.IDCliente, pedido.IDAlbum)
+
+		usuario, _ := queries.ObterUsuarioPorID(ctx, pedido.IDCliente)
+		album, _ := queries.ObterAlbumPorID(ctx, pedido.IDAlbum)
+		downloadURL := fmt.Sprintf("%s/orders/%d", appBaseURL(), pedido.ID)
+		go func() {
+			if err := email.EnviarConfirmacaoPedido(usuario.Email, album.Titulo, downloadURL); err != nil {
+				fmt.Printf("[WARN] falha ao enviar email de pagamento: %v\n", err)
+			}
+		}()
+	}
+}
+
+// reconciliarPagamento consulta o Mercado Pago quando o pedido ainda está
+// pendente e sincroniza o status local. Permite confirmar o pagamento pelo
+// polling do frontend mesmo quando o webhook não alcança o servidor (ex.: dev
+// em localhost, sem túnel público).
+func reconciliarPagamento(ctx context.Context, pedido *db.Pedido) {
+	if pedido.Status != "pendente" || !payment.Configured() {
+		return
+	}
+
+	var pay *payment.Payment
+	var err error
+	if pedido.MpPaymentID.Valid && pedido.MpPaymentID.String != "" {
+		pay, err = payment.GetPayment(ctx, pedido.MpPaymentID.String)
+	} else if pedido.MpPreferenceID.Valid {
+		// Checkout Pro: o payment id só chegaria pelo webhook — busca pelo
+		// external_reference (id do pedido).
+		pay, err = payment.FindPaymentByExternalReference(ctx, strconv.FormatInt(pedido.ID, 10))
+	}
+	if err != nil || pay == nil {
+		return
+	}
+
+	aplicarStatusPagamento(ctx, pedido, payment.MapStatus(pay.Status), strconv.FormatInt(pay.ID, 10))
+}
+
 // GET /api/orders/{id} — cliente vê pedido
 func GetOrder(w http.ResponseWriter, r *http.Request) {
 	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -326,7 +468,11 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fotos, _ := queries.ListarFotosPedido(r.Context(), orderID)
+	// Pedido pendente: confere o status direto no Mercado Pago (o frontend
+	// faz polling desta rota enquanto espera a confirmação).
+	reconciliarPagamento(r.Context(), &pedido)
+
+	fotos, _ := fotosDoPedido(r.Context(), &pedido)
 	if fotos == nil {
 		fotos = []db.PedidoFotoInfo{}
 	}
@@ -343,38 +489,47 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /api/orders/{id}/downloads — gera URLs pré-assinadas para download
-func GetDownloadLinks(w http.ResponseWriter, r *http.Request) {
+// carregarPedidoPago busca o pedido, valida que pertence ao usuário e exige
+// status 'pago' — sincronizando com o Mercado Pago antes de negar (o webhook
+// pode não ter chegado). Centraliza a validação dos endpoints de download.
+func carregarPedidoPago(w http.ResponseWriter, r *http.Request) (*db.Pedido, bool) {
 	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "id inválido")
-		return
+		return nil, false
 	}
 	userID := r.Context().Value(middleware.UserIDKey).(int64)
 
-	queries := db.GetQueries()
-	pedido, err := queries.ObterPedidoPorID(r.Context(), orderID)
+	pedido, err := db.GetQueries().ObterPedidoPorID(r.Context(), orderID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "pedido não encontrado")
 		} else {
 			writeError(w, http.StatusInternalServerError, "erro ao buscar pedido")
 		}
-		return
+		return nil, false
 	}
-
 	if pedido.IDCliente != userID {
 		writeError(w, http.StatusForbidden, "acesso negado")
-		return
+		return nil, false
 	}
 
-	// Download liberado apenas para pedidos pagos.
+	reconciliarPagamento(r.Context(), &pedido)
 	if pedido.Status != "pago" {
 		writeError(w, http.StatusForbidden, "pagamento ainda não confirmado")
+		return nil, false
+	}
+	return &pedido, true
+}
+
+// GET /api/orders/{id}/downloads — gera URLs pré-assinadas para download
+func GetDownloadLinks(w http.ResponseWriter, r *http.Request) {
+	pedido, ok := carregarPedidoPago(w, r)
+	if !ok {
 		return
 	}
 
-	fotos, err := queries.ListarFotosPedido(r.Context(), orderID)
+	fotos, err := fotosDoPedido(r.Context(), pedido)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao listar fotos")
 		return
@@ -403,12 +558,141 @@ func GetDownloadLinks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"downloads": links})
 }
 
+// nomeArquivoSeguro reduz um texto a um nome de arquivo ASCII seguro para o
+// header Content-Disposition (minúsculas, alfanumérico e hífens).
+func nomeArquivoSeguro(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ' || r == '-' || r == '_':
+			b.WriteByte('-')
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// GET /api/orders/{id}/download — baixa todas as fotos do pedido num único ZIP,
+// transmitido pelo backend (o link do bucket nunca chega ao navegador).
+func DownloadOrderZip(w http.ResponseWriter, r *http.Request) {
+	pedido, ok := carregarPedidoPago(w, r)
+	if !ok {
+		return
+	}
+
+	fotos, err := fotosDoPedido(r.Context(), pedido)
+	if err != nil || len(fotos) == 0 {
+		writeError(w, http.StatusNotFound, "nenhuma foto disponível para download")
+		return
+	}
+
+	album, _ := db.GetQueries().ObterAlbumPorID(r.Context(), pedido.IDAlbum)
+	nomeZip := fmt.Sprintf("pedido-%d.zip", pedido.ID)
+	if slug := nomeArquivoSeguro(album.Titulo); slug != "" {
+		nomeZip = fmt.Sprintf("%s-pedido-%d.zip", slug, pedido.ID)
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+nomeZip+`"`)
+
+	// Zip em streaming: cada original é copiado do S3 direto para a resposta.
+	// JPEG já é comprimido, então as entradas usam Store (sem deflate).
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+	for _, f := range fotos {
+		key := s3client.KeyFromURL(f.UrlAlta)
+		body, _, _, err := s3client.GetObject(r.Context(), key)
+		if err != nil {
+			fmt.Printf("[WARN] zip do pedido %d: falha ao ler %s: %v\n", pedido.ID, key, err)
+			continue
+		}
+		entry, err := zw.CreateHeader(&zip.FileHeader{
+			Name:     fmt.Sprintf("foto-%d%s", f.IDFotografia, path.Ext(key)),
+			Method:   zip.Store,
+			Modified: time.Now(),
+		})
+		if err == nil {
+			_, err = io.Copy(entry, body)
+		}
+		body.Close()
+		if err != nil {
+			// Resposta já iniciada — não dá para sinalizar erro HTTP; encerra.
+			fmt.Printf("[WARN] zip do pedido %d: stream interrompido: %v\n", pedido.ID, err)
+			return
+		}
+	}
+}
+
+// GET /api/orders/{id}/download/{fotoId} — baixa uma foto original do pedido,
+// transmitida pelo backend com Content-Disposition: attachment.
+func DownloadOrderPhoto(w http.ResponseWriter, r *http.Request) {
+	pedido, ok := carregarPedidoPago(w, r)
+	if !ok {
+		return
+	}
+	fotoID, err := strconv.ParseInt(r.PathValue("fotoId"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id de foto inválido")
+		return
+	}
+
+	// A foto precisa estar coberta pelo pedido (itens ou, em álbum lote, fotos
+	// atuais do álbum — mesma regra de fotosDoPedido).
+	fotos, err := fotosDoPedido(r.Context(), pedido)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao listar fotos")
+		return
+	}
+	var alvo *db.PedidoFotoInfo
+	for i := range fotos {
+		if fotos[i].IDFotografia == fotoID {
+			alvo = &fotos[i]
+			break
+		}
+	}
+	if alvo == nil {
+		writeError(w, http.StatusNotFound, "foto não pertence a este pedido")
+		return
+	}
+
+	key := s3client.KeyFromURL(alvo.UrlAlta)
+	body, contentType, contentLength, err := s3client.GetObject(r.Context(), key)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "erro ao buscar arquivo")
+		return
+	}
+	defer body.Close()
+
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="foto-%d%s"`, fotoID, path.Ext(key)))
+	if contentLength > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+	}
+	_, _ = io.Copy(w, body)
+}
+
 // POST /api/webhooks/mercadopago — notificação de pagamento do Mercado Pago.
 // Endpoint público (sem autenticação). O MP envia o tipo e o ID do recurso via
 // query params e/ou corpo JSON; consultamos o pagamento, resolvemos o pedido
 // pelo external_reference e atualizamos o status.
 func MercadoPagoWebhook(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("MercadoPagoWebhook")
+	// Validação de assinatura (opt-in via MP_WEBHOOK_SECRET). Mesmo sem ela o
+	// fluxo é seguro: o status vem sempre de GetPayment na API do MP, nunca do
+	// corpo da notificação.
+	if !payment.VerifyWebhookSignature(
+		r.Header.Get("x-signature"),
+		r.Header.Get("x-request-id"),
+		r.URL.Query().Get("data.id"),
+	) {
+		fmt.Println("[WARN] webhook MP: assinatura inválida — notificação ignorada")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	// Responde 200 sempre que possível — o MP reenvia em caso de erro.
 	tipo := r.URL.Query().Get("type")
 	if tipo == "" {
@@ -460,31 +744,15 @@ func MercadoPagoWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queries := db.GetQueries()
-	pedido, err := queries.ObterPedidoPorID(r.Context(), pedidoID)
+	pedido, err := db.GetQueries().ObterPedidoPorID(r.Context(), pedidoID)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	novoStatus := payment.MapStatus(pay.Status)
-	if err := queries.RegistrarPagamentoPedido(r.Context(), pedidoID, novoStatus, strconv.FormatInt(pay.ID, 10)); err != nil {
-		fmt.Printf("[WARN] webhook MP: falha ao atualizar pedido %d: %v\n", pedidoID, err)
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Email de confirmação apenas na transição para 'pago' (evita duplicatas).
-	if novoStatus == "pago" && pedido.Status != "pago" {
-		usuario, _ := queries.ObterUsuarioPorID(r.Context(), pedido.IDCliente)
-		album, _ := queries.ObterAlbumPorID(r.Context(), pedido.IDAlbum)
-		downloadURL := fmt.Sprintf("%s/orders/%d", appBaseURL(), pedido.ID)
-		go func() {
-			if err := email.EnviarConfirmacaoPedido(usuario.Email, album.Titulo, downloadURL); err != nil {
-				fmt.Printf("[WARN] falha ao enviar email de pagamento: %v\n", err)
-			}
-		}()
-	}
+	// Aplica o status sem rebaixar pedidos pagos e envia o email de
+	// confirmação na transição para 'pago'.
+	aplicarStatusPagamento(r.Context(), &pedido, payment.MapStatus(pay.Status), strconv.FormatInt(pay.ID, 10))
 
 	w.WriteHeader(http.StatusOK)
 }

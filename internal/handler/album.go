@@ -174,16 +174,24 @@ func GetAlbum(w http.ResponseWriter, r *http.Request) {
 		fotosPublicas[i] = fotoPublicaDTO{ID: f.ID, UrlBaixa: s3client.PublicURL(f.UrlBaixa), CriadoEm: f.CriadoEm}
 	}
 
-	// Fotos que o cliente já comprou (pedido pago) — o frontend as remove da
-	// seleção para impedir compra duplicada.
+	// Controle de compra duplicada — vale para clientes convidados e também
+	// para visitantes autenticados de álbuns públicos (que podem comprar):
+	//   - venda por foto: "compradas" lista as fotos já pagas; o frontend as
+	//     bloqueia na seleção.
+	//   - venda completa (lote): "comprado" indica que o cliente já comprou o
+	//     álbum inteiro — fotos novas entram automaticamente no pedido pago,
+	//     então não há marcação por foto nem recompra.
 	compradas := []int64{}
-	if papel == "cliente" {
-		if ids, err := queries.ListarFotoIDsCompradas(r.Context(), userID, albumID); err == nil {
+	comprado := false
+	if papel == "cliente" || papel == "visitante" {
+		if album.Lote {
+			comprado, _ = queries.ClienteComprouAlbum(r.Context(), userID, albumID)
+		} else if ids, err := queries.ListarFotoIDsCompradas(r.Context(), userID, albumID); err == nil {
 			compradas = ids
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"album": comURLAlbum(album), "fotos": fotosPublicas, "papel": papel, "compradas": compradas})
+	writeJSON(w, http.StatusOK, map[string]any{"album": comURLAlbum(album), "fotos": fotosPublicas, "papel": papel, "compradas": compradas, "comprado": comprado})
 }
 
 // PATCH /api/albums/{id}/visibility  — somente dono

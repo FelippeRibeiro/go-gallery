@@ -149,6 +149,16 @@ func (q *Queries) ListarFotoIDsCompradas(ctx context.Context, idCliente, idAlbum
 	})
 }
 
+// ClienteComprouAlbum retorna true se o cliente tem algum pedido pago no álbum.
+// Usado em álbuns de venda completa (lote): comprou uma vez, é dono do álbum
+// inteiro — inclusive de fotos adicionadas depois.
+func (q *Queries) ClienteComprouAlbum(ctx context.Context, idCliente, idAlbum int64) (bool, error) {
+	return q.clienteComprouAlbum(ctx, clienteComprouAlbumParams{
+		IDCliente: idCliente,
+		IDAlbum:   idAlbum,
+	})
+}
+
 // AtualizarPreferenciaPedido grava o ID da preference do Mercado Pago no pedido.
 func (q *Queries) AtualizarPreferenciaPedido(ctx context.Context, id int64, preferenceID string) error {
 	return q.atualizarPreferenciaPedido(ctx, atualizarPreferenciaPedidoParams{

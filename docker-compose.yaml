@@ -9,6 +9,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: go-gallery
       POSTGRES_DB: gallery
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
   minio:
     image: minio/minio:latest
     ports:

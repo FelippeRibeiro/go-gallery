@@ -5,12 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/FelippeRibeiro/go-gallery/internal/db"
 	"github.com/FelippeRibeiro/go-gallery/internal/middleware"
 	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	minSenhaLen   = 6
+	msgSenhaCurta = "a senha deve ter pelo menos 6 caracteres"
 )
 
 type userDTO struct {
@@ -39,6 +47,16 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// clientIP extrai o IP do cliente do RemoteAddr (sem confiar em headers
+// encaminhados, que são forjáveis).
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // POST /api/auth/register
 func Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -52,6 +70,10 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Nome == "" || req.Email == "" || req.Senha == "" {
 		writeError(w, http.StatusBadRequest, "nome, email e senha são obrigatórios")
+		return
+	}
+	if utf8.RuneCountInString(req.Senha) < minSenhaLen {
+		writeError(w, http.StatusBadRequest, msgSenhaCurta)
 		return
 	}
 
@@ -95,6 +117,14 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Proteção contra força bruta: limita tentativas por IP+email; um login
+	// correto zera o contador.
+	limiterKey := clientIP(r) + "|" + strings.ToLower(req.Email)
+	if !middleware.LoginAllowed(limiterKey) {
+		writeError(w, http.StatusTooManyRequests, "muitas tentativas de login — tente novamente em alguns minutos")
+		return
+	}
+
 	queries := db.GetQueries()
 	user, err := queries.ObterUsuarioPorEmail(r.Context(), req.Email)
 	if err != nil {
@@ -110,6 +140,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "credenciais inválidas")
 		return
 	}
+	middleware.LoginSucceeded(limiterKey)
 
 	tipo := fmt.Sprintf("%v", user.Tipo)
 	token, err := middleware.GenerateToken(user.ID, tipo)
@@ -137,6 +168,10 @@ func AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Token == "" || req.Nome == "" || req.Senha == "" {
 		writeError(w, http.StatusBadRequest, "token, nome e senha são obrigatórios")
+		return
+	}
+	if utf8.RuneCountInString(req.Senha) < minSenhaLen {
+		writeError(w, http.StatusBadRequest, msgSenhaCurta)
 		return
 	}
 
@@ -185,7 +220,9 @@ func AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	queries.AssociarClienteAlbum(r.Context(), user.ID, convite.IDAlbum) //nolint:errcheck
 	queries.MarcarConviteUsado(r.Context(), req.Token)                  //nolint:errcheck
 
-	token, err := middleware.GenerateToken(user.ID, "cliente")
+	// Usa o tipo real do usuário: se o e-mail convidado já pertencia a uma
+	// conta existente, o token não pode rebaixá-la para 'cliente'.
+	token, err := middleware.GenerateToken(user.ID, fmt.Sprintf("%v", user.Tipo))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao gerar token")
 		return
