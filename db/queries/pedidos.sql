@@ -52,3 +52,26 @@ FROM pedidos p
 INNER JOIN albuns a ON a.id = p.id_album
 WHERE p.id_cliente = $1
 ORDER BY p.criado_em DESC;
+
+-- Vendas: pedidos feitos nos álbuns de um fotógrafo (visão do dono).
+-- name: ListarVendasPorFotografo :many
+SELECT p.id, p.id_cliente, p.id_album, p.status, p.valor_total, p.criado_em,
+       a.titulo AS album_titulo, a.capa_url,
+       u.nome AS cliente_nome, u.email AS cliente_email,
+       (SELECT COUNT(*) FROM pedidos_fotos pf WHERE pf.id_pedido = p.id) AS total_fotos
+FROM pedidos p
+INNER JOIN albuns a ON a.id = p.id_album
+INNER JOIN usuarios u ON u.id = p.id_cliente
+WHERE a.id_fotografo = $1
+ORDER BY p.criado_em DESC;
+
+-- Saldo do fotógrafo: somas calculadas no banco (exatas, sem float no Go).
+-- name: ResumoVendasFotografo :one
+SELECT
+    COALESCE(SUM(p.valor_total) FILTER (WHERE p.status = 'pago'), 0)::numeric(12,2)::text AS total_recebido,
+    COUNT(*) FILTER (WHERE p.status = 'pago') AS pedidos_pagos,
+    COALESCE(SUM(p.valor_total) FILTER (WHERE p.status = 'pendente'), 0)::numeric(12,2)::text AS total_pendente,
+    COUNT(*) FILTER (WHERE p.status = 'pendente') AS pedidos_pendentes
+FROM pedidos p
+INNER JOIN albuns a ON a.id = p.id_album
+WHERE a.id_fotografo = $1;

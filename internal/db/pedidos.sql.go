@@ -152,6 +152,68 @@ func (q *Queries) ListarPedidosResumoPorCliente(ctx context.Context, idCliente i
 	return items, nil
 }
 
+const listarVendasPorFotografo = `-- name: ListarVendasPorFotografo :many
+SELECT p.id, p.id_cliente, p.id_album, p.status, p.valor_total, p.criado_em,
+       a.titulo AS album_titulo, a.capa_url,
+       u.nome AS cliente_nome, u.email AS cliente_email,
+       (SELECT COUNT(*) FROM pedidos_fotos pf WHERE pf.id_pedido = p.id) AS total_fotos
+FROM pedidos p
+INNER JOIN albuns a ON a.id = p.id_album
+INNER JOIN usuarios u ON u.id = p.id_cliente
+WHERE a.id_fotografo = $1
+ORDER BY p.criado_em DESC
+`
+
+type ListarVendasPorFotografoRow struct {
+	ID           int64
+	IDCliente    int64
+	IDAlbum      int64
+	Status       string
+	ValorTotal   string
+	CriadoEm     time.Time
+	AlbumTitulo  string
+	CapaUrl      sql.NullString
+	ClienteNome  string
+	ClienteEmail string
+	TotalFotos   int64
+}
+
+// Vendas: pedidos feitos nos álbuns de um fotógrafo (visão do dono).
+func (q *Queries) ListarVendasPorFotografo(ctx context.Context, idFotografo int64) ([]ListarVendasPorFotografoRow, error) {
+	rows, err := q.db.QueryContext(ctx, listarVendasPorFotografo, idFotografo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListarVendasPorFotografoRow
+	for rows.Next() {
+		var i ListarVendasPorFotografoRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IDCliente,
+			&i.IDAlbum,
+			&i.Status,
+			&i.ValorTotal,
+			&i.CriadoEm,
+			&i.AlbumTitulo,
+			&i.CapaUrl,
+			&i.ClienteNome,
+			&i.ClienteEmail,
+			&i.TotalFotos,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const obterPedidoPorID = `-- name: ObterPedidoPorID :one
 SELECT id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id, referencia FROM pedidos WHERE id = $1
 `
@@ -190,6 +252,37 @@ func (q *Queries) ObterPedidoPorReferencia(ctx context.Context, referencia sql.N
 		&i.MpPreferenceID,
 		&i.MpPaymentID,
 		&i.Referencia,
+	)
+	return i, err
+}
+
+const resumoVendasFotografo = `-- name: ResumoVendasFotografo :one
+SELECT
+    COALESCE(SUM(p.valor_total) FILTER (WHERE p.status = 'pago'), 0)::numeric(12,2)::text AS total_recebido,
+    COUNT(*) FILTER (WHERE p.status = 'pago') AS pedidos_pagos,
+    COALESCE(SUM(p.valor_total) FILTER (WHERE p.status = 'pendente'), 0)::numeric(12,2)::text AS total_pendente,
+    COUNT(*) FILTER (WHERE p.status = 'pendente') AS pedidos_pendentes
+FROM pedidos p
+INNER JOIN albuns a ON a.id = p.id_album
+WHERE a.id_fotografo = $1
+`
+
+type ResumoVendasFotografoRow struct {
+	TotalRecebido    string
+	PedidosPagos     int64
+	TotalPendente    string
+	PedidosPendentes int64
+}
+
+// Saldo do fotógrafo: somas calculadas no banco (exatas, sem float no Go).
+func (q *Queries) ResumoVendasFotografo(ctx context.Context, idFotografo int64) (ResumoVendasFotografoRow, error) {
+	row := q.db.QueryRowContext(ctx, resumoVendasFotografo, idFotografo)
+	var i ResumoVendasFotografoRow
+	err := row.Scan(
+		&i.TotalRecebido,
+		&i.PedidosPagos,
+		&i.TotalPendente,
+		&i.PedidosPendentes,
 	)
 	return i, err
 }

@@ -93,6 +93,10 @@ func New() http.Handler {
 	mux.HandleFunc("GET /api/orders/{id}/download", middleware.RequireAuth(handler.DownloadOrderZip))
 	mux.HandleFunc("GET /api/orders/{id}/download/{fotoId}", middleware.RequireAuth(handler.DownloadOrderPhoto))
 
+	// Vendas — visão do fotógrafo sobre os pedidos dos seus álbuns
+	mux.HandleFunc("GET /api/sales", middleware.RequireAuth(handler.ListSales))
+	mux.HandleFunc("GET /api/sales/{id}", middleware.RequireAuth(handler.GetSale))
+
 	// Webhook do Mercado Pago — público (sem autenticação)
 	mux.HandleFunc("POST /api/webhooks/mercadopago", handler.MercadoPagoWebhook)
 

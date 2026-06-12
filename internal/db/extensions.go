@@ -21,6 +21,8 @@ type FotografoAlbumInfo = ListarFotografosAlbumRow
 type PedidoFotoInfo = ListarFotosPedidoRow
 type PedidoResumo = ListarPedidosResumoPorClienteRow
 type FotografoPublico = ListarFotografosComAlbumPublicoRow
+type VendaInfo = ListarVendasPorFotografoRow
+type VendasResumo = ResumoVendasFotografoRow
 
 // ─── Wrappers com args posicionais ────────────────────────────────────────────
 

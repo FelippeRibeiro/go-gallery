@@ -107,6 +107,29 @@ export interface PedidoFotoInfo {
   UrlBaixa: string
 }
 
+// Venda: pedido visto pelo fotógrafo dono do álbum
+export interface Venda extends Pedido {
+  AlbumTitulo: string
+  CapaUrl: { String: string; Valid: boolean }
+  ClienteNome: string
+  ClienteEmail: string
+  TotalFotos: number
+}
+
+export interface VendasResumo {
+  TotalRecebido: string
+  PedidosPagos: number
+  TotalPendente: string
+  PedidosPendentes: number
+}
+
+export interface VendaDetalhe {
+  pedido: Pedido
+  album: Album
+  cliente: { id: number; nome: string; email: string }
+  fotos: PedidoFotoInfo[]
+}
+
 export interface DownloadLink {
   foto_id: number
   url_baixa: string

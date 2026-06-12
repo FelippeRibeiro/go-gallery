@@ -13,6 +13,8 @@ import Orders from '@/pages/Orders'
 import PublicPhotographer from '@/pages/PublicPhotographer'
 import Discover from '@/pages/Discover'
 import Profile from '@/pages/Profile'
+import Sales from '@/pages/Sales'
+import Sale from '@/pages/Sale'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -51,6 +53,14 @@ export default function App() {
           <Route
             path="/orders/:id"
             element={<PrivateRoute><Order /></PrivateRoute>}
+          />
+          <Route
+            path="/sales"
+            element={<PrivateRoute><Sales /></PrivateRoute>}
+          />
+          <Route
+            path="/sales/:id"
+            element={<PrivateRoute><Sale /></PrivateRoute>}
           />
           <Route
             path="/profile"
