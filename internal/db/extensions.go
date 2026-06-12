@@ -179,6 +179,27 @@ func (q *Queries) RegistrarPagamentoPedido(ctx context.Context, id int64, status
 	})
 }
 
+// MarcarPedidoPagoSeNaoPago marca o pedido como 'pago' de forma atômica, apenas
+// se ele ainda não estiver pago. Retorna true somente quando ESTA chamada
+// efetuou a transição (linha afetada). Isso garante que os efeitos colaterais
+// do pagamento (e-mail de confirmação, vínculo cliente↔álbum) ocorram uma única
+// vez, mesmo quando o webhook do Mercado Pago e o polling do frontend chegam
+// concorrentemente.
+func (q *Queries) MarcarPedidoPagoSeNaoPago(ctx context.Context, id int64, paymentID string) (bool, error) {
+	res, err := q.db.ExecContext(ctx,
+		`UPDATE pedidos SET status = 'pago', mp_payment_id = $2 WHERE id = $1 AND status <> 'pago'`,
+		id, sql.NullString{String: paymentID, Valid: paymentID != ""},
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // AtualizarBioFotografo salva o texto de bio; bio é TEXT NULL no banco.
 func (q *Queries) AtualizarBioFotografo(ctx context.Context, id int64, bio string) error {
 	return q.atualizarBioFotografo(ctx, atualizarBioFotografoParams{

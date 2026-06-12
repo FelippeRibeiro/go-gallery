@@ -187,15 +187,10 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Email de pedido criado (aguardando pagamento) — async.
-	usuario, _ := queries.ObterUsuarioPorID(r.Context(), userID)
-	downloadURL := fmt.Sprintf("%s/orders/%d", appBaseURL(), pedido.ID)
-	go func() {
-		if err := email.EnviarConfirmacaoPedido(usuario.Email, album.Titulo, downloadURL); err != nil {
-			fmt.Printf("[WARN] falha ao enviar email de pedido: %v\n", err)
-		}
-	}()
-
+	// NÃO enviamos email aqui: o pedido foi apenas criado (status 'pendente'),
+	// ainda sem pagamento. O email "Pedido confirmado" é enviado somente quando
+	// o pagamento é aprovado, em aplicarStatusPagamento (transição para 'pago').
+	//
 	// O pagamento é iniciado em seguida pelo frontend, na tela do pedido, onde o
 	// cliente escolhe o método: Checkout Pro (POST /api/orders/{id}/checkout) ou
 	// PIX embutido (POST /api/orders/{id}/pix).
@@ -396,14 +391,22 @@ func aplicarStatusPagamento(ctx context.Context, pedido *db.Pedido, novoStatus, 
 		return
 	}
 	queries := db.GetQueries()
-	if err := queries.RegistrarPagamentoPedido(ctx, pedido.ID, novoStatus, paymentID); err != nil {
-		fmt.Printf("[WARN] falha ao atualizar status do pedido %d: %v\n", pedido.ID, err)
-		return
-	}
-	transitouParaPago := novoStatus == "pago"
-	pedido.Status = novoStatus
 
-	if transitouParaPago {
+	if novoStatus == "pago" {
+		// Transição atômica no banco: apenas um chamador consegue mudar de
+		// !pago -> pago. Sem isso, webhook do MP e polling do frontend chegando
+		// juntos leem 'pendente' ao mesmo tempo e ambos enviam o email.
+		mudou, err := queries.MarcarPedidoPagoSeNaoPago(ctx, pedido.ID, paymentID)
+		if err != nil {
+			fmt.Printf("[WARN] falha ao marcar pedido %d como pago: %v\n", pedido.ID, err)
+			return
+		}
+		pedido.Status = "pago"
+		if !mudou {
+			// Outro processo já confirmou este pagamento — efeitos já disparados.
+			return
+		}
+
 		// Comprador passa a ter vínculo com o álbum (idempotente) — o álbum
 		// aparece no dashboard dele como os de convite.
 		_, _ = queries.AssociarClienteAlbum(ctx, pedido.IDCliente, pedido.IDAlbum)
@@ -416,7 +419,15 @@ func aplicarStatusPagamento(ctx context.Context, pedido *db.Pedido, novoStatus, 
 				fmt.Printf("[WARN] falha ao enviar email de pagamento: %v\n", err)
 			}
 		}()
+		return
 	}
+
+	// Status não-pago (pendente/falhou): grava sem rebaixar um pedido já pago.
+	if err := queries.RegistrarPagamentoPedido(ctx, pedido.ID, novoStatus, paymentID); err != nil {
+		fmt.Printf("[WARN] falha ao atualizar status do pedido %d: %v\n", pedido.ID, err)
+		return
+	}
+	pedido.Status = novoStatus
 }
 
 // referenciaPedido devolve a external_reference do pedido: o UUID gravado em
