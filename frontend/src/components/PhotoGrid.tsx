@@ -3,6 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ImageOff, Trash2, X, Check } from 'lucide-react'
 import Lightbox from '@/components/Lightbox'
+import SkeletonImage from '@/components/SkeletonImage'
 import type { Foto } from '@/types'
 
 interface Props {
@@ -39,10 +40,10 @@ function PhotoItem({
       className="group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-zoom-in"
       onClick={() => !confirming && onOpen()}
     >
-      <img
+      <SkeletonImage
         src={foto.UrlBaixa}
         alt={foto.Descricao?.Valid ? foto.Descricao.String : `Foto ${foto.ID}`}
-        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+        className="object-cover transition-transform duration-300 group-hover:scale-105"
         loading="lazy"
       />
 

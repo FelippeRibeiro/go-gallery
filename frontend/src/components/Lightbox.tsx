@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 export interface LightboxPhoto {
   id: number
@@ -17,6 +17,8 @@ export default function Lightbox({ photos, initialIndex, onClose }: Props) {
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
+  // id da última foto carregada — comparar com a atual evita resetar via effect
+  const [loadedId, setLoadedId] = useState<number | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
@@ -227,10 +229,15 @@ export default function Lightbox({ photos, initialIndex, onClose }: Props) {
         style={{ cursor: scale > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in' }}
         onClick={(e) => { if (e.target === e.currentTarget && scale === 1) onClose() }}
       >
+        {loadedId !== photo.id && (
+          <Loader2 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-8 animate-spin text-white/50 pointer-events-none" />
+        )}
         <img
           key={photo.id}
           src={photo.url}
           alt={`Foto ${photo.id}`}
+          ref={(img) => { if (img?.complete && img.naturalWidth > 0) setLoadedId(photo.id) }}
+          onLoad={() => setLoadedId(photo.id)}
           className="max-w-full max-h-full object-contain pointer-events-none"
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,

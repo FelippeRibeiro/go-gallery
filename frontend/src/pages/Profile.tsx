@@ -3,6 +3,7 @@ import { Camera, ExternalLink, Loader2, Pencil, Upload } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import Layout from '@/components/Layout'
+import SkeletonImage from '@/components/SkeletonImage'
 import { getProfile, updateProfile, uploadProfilePhoto } from '@/api/profile'
 import { useAuth } from '@/context/AuthContext'
 import type { Perfil } from '@/types'
@@ -89,7 +90,7 @@ export default function Profile() {
                   {uploadingPhoto ? (
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   ) : avatarUrl ? (
-                    <img src={avatarUrl} alt={perfil.nome} className="w-full h-full object-cover" />
+                    <SkeletonImage src={avatarUrl} alt={perfil.nome} className="object-cover" />
                   ) : (
                     <Camera className="h-10 w-10 text-muted-foreground/30" />
                   )}

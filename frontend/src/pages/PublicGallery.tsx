@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Calendar, ImageOff, Loader2 } from 'lucide-react'
 import { listPublicAlbums } from '@/api/albums'
 import PublicOrAppLayout from '@/components/PublicOrAppLayout'
+import SkeletonImage from '@/components/SkeletonImage'
 import type { Album } from '@/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -45,10 +46,10 @@ export default function PublicGallery() {
                 <Card className="overflow-hidden hover:ring-1 hover:ring-primary/40 transition-all cursor-pointer group">
                   {album.CapaUrl?.Valid ? (
                     <div className="h-44 overflow-hidden">
-                      <img
+                      <SkeletonImage
                         src={album.CapaUrl.String}
                         alt={album.Titulo}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     </div>
                   ) : (

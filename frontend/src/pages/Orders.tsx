@@ -4,6 +4,7 @@ import { Package, ChevronRight, ImageIcon } from 'lucide-react'
 import { listMyOrders } from '@/api/orders'
 import type { PedidoResumo } from '@/types'
 import Layout from '@/components/Layout'
+import SkeletonImage from '@/components/SkeletonImage'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
@@ -61,7 +62,7 @@ export default function Orders() {
               >
                 <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-muted">
                   {p.CapaUrl?.Valid ? (
-                    <img src={p.CapaUrl.String} alt={p.AlbumTitulo} className="h-full w-full object-cover" />
+                    <SkeletonImage src={p.CapaUrl.String} alt={p.AlbumTitulo} className="object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-muted-foreground">
                       <ImageIcon className="h-5 w-5" />

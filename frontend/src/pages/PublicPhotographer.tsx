@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Calendar, Camera, Images } from 'lucide-react'
 import { getPublicPhotographer } from '@/api/albums'
 import PublicOrAppLayout from '@/components/PublicOrAppLayout'
+import SkeletonImage from '@/components/SkeletonImage'
 import type { Album, FotografoPublicoResponse } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,7 +15,7 @@ function AlbumCard({ album }: { album: Album }) {
       <Card className="group overflow-hidden hover:border-primary/50 transition-colors cursor-pointer">
         <div className="aspect-video bg-muted overflow-hidden relative">
           {album.CapaUrl?.Valid ? (
-            <img src={album.CapaUrl.String} alt={album.Titulo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+            <SkeletonImage src={album.CapaUrl.String} alt={album.Titulo} className="object-cover group-hover:scale-105 transition-transform duration-300" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <Images className="h-8 w-8 text-muted-foreground/20" />
@@ -84,7 +85,7 @@ export default function PublicPhotographer() {
               </Button>
               <div className="shrink-0 w-20 h-20 rounded-full overflow-hidden bg-muted flex items-center justify-center">
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt={data.fotografo.nome} className="w-full h-full object-cover" />
+                  <SkeletonImage src={avatarUrl} alt={data.fotografo.nome} className="object-cover" />
                 ) : (
                   <Camera className="h-8 w-8 text-muted-foreground/30" />
                 )}

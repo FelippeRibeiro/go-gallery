@@ -26,6 +26,7 @@ import PhotoUpload from '@/components/PhotoUpload'
 import InviteModal from '@/components/InviteModal'
 import InvitesManager from '@/components/InvitesManager'
 import Lightbox from '@/components/Lightbox'
+import SkeletonImage from '@/components/SkeletonImage'
 import { useAuth } from '@/context/AuthContext'
 import { getAlbum, getPublicAlbum, updateVisibility, deletePhoto, uploadCover, listPhotos, reorderPhotos } from '@/api/albums'
 import { createOrder } from '@/api/orders'
@@ -122,7 +123,7 @@ function ClientAlbumView({ album, fotos: allFotos, compradas, comprado, authenti
       {/* Cover */}
       {album.CapaUrl?.Valid && (
         <div className="w-full h-48 sm:h-64 rounded-xl overflow-hidden">
-          <img src={album.CapaUrl.String} alt="Capa" className="w-full h-full object-cover" />
+          <SkeletonImage src={album.CapaUrl.String} alt="Capa" className="object-cover" />
         </div>
       )}
 
@@ -235,10 +236,10 @@ function ClientAlbumView({ album, fotos: allFotos, compradas, comprado, authenti
                 selectMode ? (comprada ? 'cursor-not-allowed' : 'cursor-pointer') : 'cursor-zoom-in'
               }`}
             >
-              <img
+              <SkeletonImage
                 src={foto.url_baixa}
                 alt={`Foto ${foto.id}`}
-                className={`w-full h-full object-cover transition-transform duration-300 ${comprada ? 'opacity-60' : 'group-hover:scale-105'}`}
+                className={`object-cover transition-transform duration-300 ${comprada ? 'opacity-60' : 'group-hover:scale-105'}`}
                 loading="lazy"
               />
               {/* Marca de foto já comprada */}
@@ -319,7 +320,7 @@ function SortablePhotoItem({ foto }: { foto: Foto }) {
       {...listeners}
       className="relative aspect-square rounded-lg overflow-hidden bg-muted cursor-grab active:cursor-grabbing"
     >
-      <img src={foto.UrlBaixa} alt="" className="w-full h-full object-cover pointer-events-none" loading="lazy" />
+      <SkeletonImage src={foto.UrlBaixa} alt="" className="object-cover pointer-events-none" loading="lazy" />
     </div>
   )
 }
@@ -426,7 +427,7 @@ function PhotographerAlbumView({ album: initialAlbum, fotos: initialFotos }: { a
       {/* Cover */}
       {album.CapaUrl?.Valid && (
         <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden group">
-          <img src={album.CapaUrl.String} alt="Capa do álbum" className="w-full h-full object-cover" />
+          <SkeletonImage src={album.CapaUrl.String} alt="Capa do álbum" className="object-cover" />
           {isOwner && (
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <Button variant="secondary" size="sm" disabled={coverUploading} onClick={() => coverInputRef.current?.click()}>

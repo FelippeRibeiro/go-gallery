@@ -5,6 +5,7 @@ import { getOrder, createCheckout, createPix } from '@/api/orders'
 import type { Pedido, PedidoFotoInfo } from '@/types'
 import type { Album } from '@/types'
 import Layout from '@/components/Layout'
+import SkeletonImage from '@/components/SkeletonImage'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -235,10 +236,11 @@ export default function Order() {
                   download
                   className="group relative block rounded-lg overflow-hidden border border-border"
                 >
-                  <img
+                  <SkeletonImage
                     src={f.UrlBaixa}
                     alt={`Foto ${f.IDFotografia}`}
-                    className="w-full aspect-square object-cover"
+                    wrapperClassName="w-full aspect-square"
+                    className="object-cover"
                     loading="lazy"
                   />
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

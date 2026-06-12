@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import SkeletonImage from '@/components/SkeletonImage'
 
 function AlbumCard({ album }: { album: Album }) {
   return (
@@ -19,10 +20,10 @@ function AlbumCard({ album }: { album: Album }) {
         {/* Cover */}
         <div className="relative aspect-video bg-muted overflow-hidden">
           {album.CapaUrl?.Valid ? (
-            <img
+            <SkeletonImage
               src={album.CapaUrl.String}
               alt={album.Titulo}
-              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">

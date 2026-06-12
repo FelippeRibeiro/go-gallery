@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Calendar, Camera, Globe, ImageOff, Images, Loader2, Users } from 'lucide-react';
 import { listPublicAlbums, listPublicPhotographers } from '@/api/albums';
 import PublicOrAppLayout from '@/components/PublicOrAppLayout';
+import SkeletonImage from '@/components/SkeletonImage';
 import type { Album, FotografoPublico } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +16,7 @@ function AlbumCard({ album }: { album: Album }) {
       <Card className="group overflow-hidden hover:ring-1 hover:ring-primary/40 transition-all cursor-pointer">
         <div className="h-44 overflow-hidden bg-muted">
           {album.CapaUrl?.Valid ? (
-            <img src={album.CapaUrl.String} alt={album.Titulo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+            <SkeletonImage src={album.CapaUrl.String} alt={album.Titulo} className="object-cover group-hover:scale-105 transition-transform duration-300" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <ImageOff className="h-8 w-8 opacity-20" />
@@ -53,7 +54,7 @@ function PhotographerCard({ fotografo }: { fotografo: FotografoPublico }) {
       <Card className="group hover:ring-1 hover:ring-primary/40 transition-all cursor-pointer">
         <CardContent className="p-5 flex gap-4 items-start">
           <div className="shrink-0 w-14 h-14 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-            {avatarUrl ? <img src={avatarUrl} alt={fotografo.Nome} className="w-full h-full object-cover" /> : <Camera className="h-6 w-6 text-muted-foreground/40" />}
+            {avatarUrl ? <SkeletonImage src={avatarUrl} alt={fotografo.Nome} className="object-cover" /> : <Camera className="h-6 w-6 text-muted-foreground/40" />}
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold group-hover:text-primary transition-colors truncate">{fotografo.Nome}</h3>
