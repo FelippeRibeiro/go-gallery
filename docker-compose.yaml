@@ -25,6 +25,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - gallery-network
 
   go-gallery-db:
     image: postgres:15
@@ -41,7 +43,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
+    networks:
+      - gallery-network
   minio:
     image: minio/minio:latest
     ports:
@@ -62,7 +65,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
+    networks:
+      - gallery-network
 volumes:
   postgres_data:
   minio_data: # Novo volume para não perder as fotos ao desligar o Docker
+
+networks:
+  gallery-network:
+    driver: bridge
