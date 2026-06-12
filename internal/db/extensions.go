@@ -122,12 +122,15 @@ func (q *Queries) ListarFotografiasPorAlbumPaginado(ctx context.Context, idAlbum
 	})
 }
 
-// CriarPedido cria um pedido com status 'pendente'.
-func (q *Queries) CriarPedido(ctx context.Context, idCliente, idAlbum int64, valorTotal string) (Pedido, error) {
+// CriarPedido cria um pedido com status 'pendente'. A referência (UUID) é a
+// external_reference usada no Mercado Pago — única por pedido, sobrevive a
+// resets do banco (o ID numérico colide).
+func (q *Queries) CriarPedido(ctx context.Context, idCliente, idAlbum int64, valorTotal, referencia string) (Pedido, error) {
 	return q.criarPedido(ctx, criarPedidoParams{
 		IDCliente:  idCliente,
 		IDAlbum:    idAlbum,
 		ValorTotal: valorTotal,
+		Referencia: sql.NullString{String: referencia, Valid: referencia != ""},
 	})
 }
 

@@ -132,9 +132,10 @@ func CreatePreference(ctx context.Context, req PreferenceRequest) (*PreferenceRe
 // ─── Payment (consulta para o webhook) ────────────────────────────────────────
 
 type Payment struct {
-	ID                int64  `json:"id"`
-	Status            string `json:"status"` // approved, pending, in_process, rejected, cancelled, refunded...
-	ExternalReference string `json:"external_reference"`
+	ID                int64   `json:"id"`
+	Status            string  `json:"status"` // approved, pending, in_process, rejected, cancelled, refunded...
+	ExternalReference string  `json:"external_reference"`
+	TransactionAmount float64 `json:"transaction_amount"`
 }
 
 // GetPayment consulta um pagamento pelo ID.

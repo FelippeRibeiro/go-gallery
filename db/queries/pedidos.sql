@@ -1,7 +1,10 @@
 -- name: criarPedido :one
-INSERT INTO pedidos (id_cliente, id_album, status, valor_total)
-VALUES ($1, $2, 'pendente', $3)
+INSERT INTO pedidos (id_cliente, id_album, status, valor_total, referencia)
+VALUES ($1, $2, 'pendente', $3, $4)
 RETURNING *;
+
+-- name: ObterPedidoPorReferencia :one
+SELECT * FROM pedidos WHERE referencia = $1;
 
 -- name: criarPedidoFoto :exec
 INSERT INTO pedidos_fotos (id_pedido, id_fotografia, valor_unitario)

@@ -59,7 +59,7 @@ func (q *Queries) ListarFotosPedido(ctx context.Context, idPedido int64) ([]List
 }
 
 const listarPedidosPorCliente = `-- name: ListarPedidosPorCliente :many
-SELECT id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id FROM pedidos
+SELECT id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id, referencia FROM pedidos
 WHERE id_cliente = $1
 ORDER BY criado_em DESC
 `
@@ -82,6 +82,7 @@ func (q *Queries) ListarPedidosPorCliente(ctx context.Context, idCliente int64) 
 			&i.CriadoEm,
 			&i.MpPreferenceID,
 			&i.MpPaymentID,
+			&i.Referencia,
 		); err != nil {
 			return nil, err
 		}
@@ -152,7 +153,7 @@ func (q *Queries) ListarPedidosResumoPorCliente(ctx context.Context, idCliente i
 }
 
 const obterPedidoPorID = `-- name: ObterPedidoPorID :one
-SELECT id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id FROM pedidos WHERE id = $1
+SELECT id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id, referencia FROM pedidos WHERE id = $1
 `
 
 func (q *Queries) ObterPedidoPorID(ctx context.Context, id int64) (Pedido, error) {
@@ -167,6 +168,28 @@ func (q *Queries) ObterPedidoPorID(ctx context.Context, id int64) (Pedido, error
 		&i.CriadoEm,
 		&i.MpPreferenceID,
 		&i.MpPaymentID,
+		&i.Referencia,
+	)
+	return i, err
+}
+
+const obterPedidoPorReferencia = `-- name: ObterPedidoPorReferencia :one
+SELECT id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id, referencia FROM pedidos WHERE referencia = $1
+`
+
+func (q *Queries) ObterPedidoPorReferencia(ctx context.Context, referencia sql.NullString) (Pedido, error) {
+	row := q.db.QueryRowContext(ctx, obterPedidoPorReferencia, referencia)
+	var i Pedido
+	err := row.Scan(
+		&i.ID,
+		&i.IDCliente,
+		&i.IDAlbum,
+		&i.Status,
+		&i.ValorTotal,
+		&i.CriadoEm,
+		&i.MpPreferenceID,
+		&i.MpPaymentID,
+		&i.Referencia,
 	)
 	return i, err
 }
@@ -205,19 +228,25 @@ func (q *Queries) clienteComprouAlbum(ctx context.Context, arg clienteComprouAlb
 }
 
 const criarPedido = `-- name: criarPedido :one
-INSERT INTO pedidos (id_cliente, id_album, status, valor_total)
-VALUES ($1, $2, 'pendente', $3)
-RETURNING id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id
+INSERT INTO pedidos (id_cliente, id_album, status, valor_total, referencia)
+VALUES ($1, $2, 'pendente', $3, $4)
+RETURNING id, id_cliente, id_album, status, valor_total, criado_em, mp_preference_id, mp_payment_id, referencia
 `
 
 type criarPedidoParams struct {
 	IDCliente  int64
 	IDAlbum    int64
 	ValorTotal string
+	Referencia sql.NullString
 }
 
 func (q *Queries) criarPedido(ctx context.Context, arg criarPedidoParams) (Pedido, error) {
-	row := q.db.QueryRowContext(ctx, criarPedido, arg.IDCliente, arg.IDAlbum, arg.ValorTotal)
+	row := q.db.QueryRowContext(ctx, criarPedido,
+		arg.IDCliente,
+		arg.IDAlbum,
+		arg.ValorTotal,
+		arg.Referencia,
+	)
 	var i Pedido
 	err := row.Scan(
 		&i.ID,
@@ -228,6 +257,7 @@ func (q *Queries) criarPedido(ctx context.Context, arg criarPedidoParams) (Pedid
 		&i.CriadoEm,
 		&i.MpPreferenceID,
 		&i.MpPaymentID,
+		&i.Referencia,
 	)
 	return i, err
 }

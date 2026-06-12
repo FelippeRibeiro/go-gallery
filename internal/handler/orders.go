@@ -20,6 +20,7 @@ import (
 	"github.com/FelippeRibeiro/go-gallery/internal/middleware"
 	"github.com/FelippeRibeiro/go-gallery/internal/payment"
 	s3client "github.com/FelippeRibeiro/go-gallery/internal/s3"
+	"github.com/google/uuid"
 )
 
 // appBaseURL devolve a URL pública do frontend (APP_URL), usada nas back_urls.
@@ -164,7 +165,7 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback() //nolint:errcheck
 
 	qtx := queries.WithTx(tx)
-	pedido, err := qtx.CriarPedido(r.Context(), userID, albumID, valorTotal)
+	pedido, err := qtx.CriarPedido(r.Context(), userID, albumID, valorTotal, uuid.NewString())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao criar pedido")
 		return
@@ -262,7 +263,7 @@ func CreateCheckout(w http.ResponseWriter, r *http.Request) {
 			UnitPrice:  precoTotal,
 			CurrencyID: "BRL",
 		}},
-		ExternalReference: strconv.FormatInt(pedido.ID, 10),
+		ExternalReference: referenciaPedido(pedido),
 		BackURLs: payment.BackURLs{
 			Success: fmt.Sprintf("%s/orders/%d", appURL, pedido.ID),
 			Failure: fmt.Sprintf("%s/orders/%d", appURL, pedido.ID),
@@ -301,7 +302,7 @@ func CreatePix(w http.ResponseWriter, r *http.Request) {
 		TransactionAmount: precoTotal,
 		Description:       fmt.Sprintf("Pedido #%d — %s", pedido.ID, album.Titulo),
 		Payer:             payment.PixPayer{Email: usuario.Email, FirstName: usuario.Nome},
-		ExternalReference: strconv.FormatInt(pedido.ID, 10),
+		ExternalReference: referenciaPedido(pedido),
 		NotificationURL:   apiBaseURL() + "/api/webhooks/mercadopago",
 	})
 	if err != nil {
@@ -418,6 +419,39 @@ func aplicarStatusPagamento(ctx context.Context, pedido *db.Pedido, novoStatus, 
 	}
 }
 
+// referenciaPedido devolve a external_reference do pedido: o UUID gravado em
+// `referencia` ou, para pedidos antigos (pré-migração), o ID numérico.
+func referenciaPedido(p *db.Pedido) string {
+	if p.Referencia.Valid && p.Referencia.String != "" {
+		return p.Referencia.String
+	}
+	return strconv.FormatInt(p.ID, 10)
+}
+
+// pagamentoConfere valida que o pagamento corresponde ao pedido: referência e
+// valor exatos. Sem isso, um pagamento antigo da mesma conta MP com a mesma
+// external_reference (ex.: IDs numéricos reaproveitados após reset do banco)
+// marcaria o pedido errado como pago.
+func pagamentoConfere(pedido *db.Pedido, pay *payment.Payment) bool {
+	if pay.ExternalReference != referenciaPedido(pedido) {
+		return false
+	}
+	total, err := strconv.ParseFloat(pedido.ValorTotal, 64)
+	if err != nil {
+		return false
+	}
+	diff := pay.TransactionAmount - total
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff >= 0.01 {
+		fmt.Printf("[WARN] pagamento %d ignorado: valor %.2f difere do pedido %d (%.2f)\n",
+			pay.ID, pay.TransactionAmount, pedido.ID, total)
+		return false
+	}
+	return true
+}
+
 // reconciliarPagamento consulta o Mercado Pago quando o pedido ainda está
 // pendente e sincroniza o status local. Permite confirmar o pagamento pelo
 // polling do frontend mesmo quando o webhook não alcança o servidor (ex.: dev
@@ -431,12 +465,16 @@ func reconciliarPagamento(ctx context.Context, pedido *db.Pedido) {
 	var err error
 	if pedido.MpPaymentID.Valid && pedido.MpPaymentID.String != "" {
 		pay, err = payment.GetPayment(ctx, pedido.MpPaymentID.String)
-	} else if pedido.MpPreferenceID.Valid {
-		// Checkout Pro: o payment id só chegaria pelo webhook — busca pelo
-		// external_reference (id do pedido).
-		pay, err = payment.FindPaymentByExternalReference(ctx, strconv.FormatInt(pedido.ID, 10))
+	} else if pedido.MpPreferenceID.Valid && pedido.Referencia.Valid {
+		// Checkout Pro: o payment id só chegaria pelo webhook — busca pela
+		// referência UUID. Pedidos legados sem referência não usam a busca:
+		// o ID numérico colide com pagamentos antigos da conta.
+		pay, err = payment.FindPaymentByExternalReference(ctx, pedido.Referencia.String)
 	}
 	if err != nil || pay == nil {
+		return
+	}
+	if !pagamentoConfere(pedido, pay) {
 		return
 	}
 
@@ -738,14 +776,24 @@ func MercadoPagoWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pedidoID, err := strconv.ParseInt(pay.ExternalReference, 10, 64)
+	// Resolve o pedido pela referência UUID; pedidos legados (pré-migração)
+	// usavam o ID numérico como external_reference.
+	queries := db.GetQueries()
+	pedido, err := queries.ObterPedidoPorReferencia(r.Context(), sql.NullString{String: pay.ExternalReference, Valid: true})
 	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		return
+		pedidoID, perr := strconv.ParseInt(pay.ExternalReference, 10, 64)
+		if perr != nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		pedido, err = queries.ObterPedidoPorID(r.Context(), pedidoID)
+		if err != nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 	}
 
-	pedido, err := db.GetQueries().ObterPedidoPorID(r.Context(), pedidoID)
-	if err != nil {
+	if !pagamentoConfere(&pedido, pay) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}

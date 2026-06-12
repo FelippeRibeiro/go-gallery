@@ -70,6 +70,7 @@ type Pedido struct {
 	CriadoEm       time.Time
 	MpPreferenceID sql.NullString
 	MpPaymentID    sql.NullString
+	Referencia     sql.NullString
 }
 
 type PedidosFoto struct {
