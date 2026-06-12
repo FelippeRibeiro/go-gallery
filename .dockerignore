@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+tmp/
+public/
+frontend/node_modules/
+Dockerfile
+docker-compose.yaml
+CLAUDE.md
+README.md
+

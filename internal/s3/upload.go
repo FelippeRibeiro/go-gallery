@@ -16,7 +16,14 @@ import (
 
 const BucketName = "go-gallery"
 
+// getEndpoint retorna o endpoint usado nas URLs públicas entregues ao
+// navegador. Dentro do Docker o SDK fala com o MinIO via rede interna
+// (S3_ENDPOINT=http://minio:9000), mas o navegador só alcança o host —
+// S3_PUBLIC_ENDPOINT permite separar os dois; sem ela, vale o S3_ENDPOINT.
 func getEndpoint() string {
+	if ep := os.Getenv("S3_PUBLIC_ENDPOINT"); ep != "" {
+		return ep
+	}
 	ep := os.Getenv("S3_ENDPOINT")
 	if ep == "" {
 		return "http://localhost:9000"
